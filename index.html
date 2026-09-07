@@ -164,6 +164,10 @@
       .lang-switcher { margin-left: 0; flex-wrap: wrap; }
     }
 
+    /* Filas y bloques que SOLO aparecen en la copia de taller (btnPrintTaller).
+       La versión cliente (pantalla, impresión y PDF/PNG) solo muestra soportes de PARED. */
+    .taller-only { display: none !important; }
+
     @media print {
       @page { size: landscape; margin: 10mm; }
       header, .form, .no-print, .btn-group, .notification, .col-taller { display: none !important; }
@@ -172,9 +176,12 @@
       .plan { box-shadow: none; border: none; padding: 0; background: #fff; }
       .plan-notes-container { border: none; padding: 14px 0 0 0; }
       .plan-notes-container textarea { border: none; background: transparent; padding: 0; resize: none; overflow: hidden; }
-      /* Copia para taller (btnPrintTaller): invierte qué columnas de cota se ven. */
+      /* Copia para taller (btnPrintTaller): invierte qué columnas de cota se ven
+         y recupera las filas/bloques que en la versión cliente están ocultos. */
       body.print-taller .col-taller { display: table-cell !important; }
       body.print-taller .col-cliente { display: none !important; }
+      body.print-taller tr.taller-only { display: table-row !important; }
+      body.print-taller .terminal-table.taller-only { display: block !important; }
     }
   </style>
 </head>
@@ -2370,10 +2377,10 @@ const App = (() => {
     });
 
     const allCotaX = [
-      ...listaParedesConEscala.map(p => ({ x: p.x, label: `${p.cota}`, color: '#2563eb', tipo: `${labels.badgePared} SP${p.id}`, lado: null })),
+      ...listaParedesConEscala.map(p => ({ x: p.x, label: `${p.cota}`, color: '#2563eb', tipo: `${labels.badgePared} SP${p.id}`, lado: null, esPared: true })),
       ...listaBrazosConEscala.map(b => {
         const letra = ladoLetra(b.bObj.lado);
-        return { x: b.x, label: `${b.cota}`, color: b.bObj.lado === 'der' ? '#10b981' : '#ef4444', tipo: `${b.bObj.lado === 'izq' ? labels.badgeBrazoI : labels.badgeBrazoD} P${b.bObj.n}${letra}`, lado: b.bObj.lado };
+        return { x: b.x, label: `${b.cota}`, color: b.bObj.lado === 'der' ? '#10b981' : '#ef4444', tipo: `${b.bObj.lado === 'izq' ? labels.badgeBrazoI : labels.badgeBrazoD} P${b.bObj.n}${letra}`, lado: b.bObj.lado, esPared: false };
       })
     ].sort((a, b) => a.x - b.x);
 
@@ -2603,7 +2610,7 @@ const App = (() => {
     const tallerTd = (valor) => grosorTapa ? `<td class="col-taller">${valor === null ? '—' : `<b>${valor} mm</b>`}</td>` : '';
 
     let tableRows = `
-      <tr>
+      <tr class="taller-only">
         <td><span class="badge badge-motor">M (${labels.metaMotor})</span></td>
         <td class="col-cliente"><b>${motor === 'izq' ? '0 mm' : L + ' mm'}</b></td>
         ${tallerTd(null)}
@@ -2616,8 +2623,9 @@ const App = (() => {
       if (item.tipo.includes('Brazo') || item.tipo.includes('Arm')) {
         badgeClass = item.color === '#10b981' ? 'badge-der' : 'badge-izq';
       }
+      // La versión cliente solo lista soportes de PARED; el resto va marcado como taller-only.
       tableRows += `
-        <tr>
+        <tr${item.esPared ? '' : ' class="taller-only"'}>
           <td><span class="badge ${badgeClass}">${item.tipo}</span></td>
           <td class="col-cliente"><b>${item.label} mm</b></td>
           ${tallerTd(cotaTallerSoporte(Number(item.label), item.lado))}
@@ -2633,8 +2641,9 @@ const App = (() => {
       { posiciones: perfilInf.posiciones,     badgeClass: 'badge-inferior',       label: labels.badgeInferior,       prefix: 'I' },
     ].forEach(grupo => {
       grupo.posiciones.forEach((cota, idx) => {
+        // Soportes de tejadillo/lira/cofre/perfil inferior: solo en la copia de taller.
         tableRows += `
-          <tr>
+          <tr class="taller-only">
             <td><span class="badge ${grupo.badgeClass}">${grupo.label} ${grupo.prefix}${idx+1}</span></td>
             <td class="col-cliente"><b>${cota} mm</b></td>
             ${tallerTd(cotaTallerSoporte(cota, null))}
@@ -2681,7 +2690,7 @@ const App = (() => {
         `;
       });
       svgHtml += `
-        <div class="terminal-table" style="margin-top:16px;">
+        <div class="terminal-table taller-only" style="margin-top:16px;">
           <h4 style="margin:0 0 8px; font-size:0.9rem; color: var(--text-main);">${labels.tablaTerminales} — ${tipoTerminalTxt}</h4>
           <table class="summary-table">
             <thead>

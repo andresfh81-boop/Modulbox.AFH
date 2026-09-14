@@ -182,6 +182,48 @@
       body.print-taller .col-cliente { display: none !important; }
       body.print-taller tr.taller-only { display: table-row !important; }
     }
+
+    /* Vista Taller en pantalla (botones Cliente/Taller): mismo cambio que la copia
+       impresa de taller, pero aplicado siempre, no solo dentro de @media print.
+       Por defecto (vista Cliente) las columnas de taller quedan ocultas. */
+    .col-taller { display: none; }
+    body.view-taller .col-taller { display: table-cell !important; }
+    body.view-taller .col-cliente { display: none !important; }
+    body.view-taller tr.taller-only { display: table-row !important; }
+
+    .vista-toggle { margin-top: 0; margin-bottom: 12px; }
+    .view-toggle-btn {
+      margin-top: 0; background: #e5e7eb; color: #374151; border: 1px solid var(--border);
+    }
+    .view-toggle-btn:hover { background: #d1d5db; }
+    .view-toggle-btn.active { background: #1f2937; color: #fff; }
+    .view-toggle-btn.active:hover { background: #1f2937; }
+
+    .plano-click-zoom { cursor: zoom-in; border-radius: 8px; transition: outline-color .15s; outline: 2px dashed transparent; outline-offset: 4px; }
+    .plano-click-zoom:hover { outline-color: #9ca3af; }
+    .plano-modal-body .plano-click-zoom { cursor: zoom-out; }
+
+    .plano-toolbar { display: flex; justify-content: flex-end; margin-bottom: 8px; }
+    .btn-zoom-plano {
+      margin-top: 0; width: auto; padding: 6px 14px; font-size: 0.85rem;
+      background: #6b7280;
+    }
+    .btn-zoom-plano:hover { background: #4b5563; }
+
+    .plano-modal-overlay {
+      display: none; position: fixed; inset: 0; background: rgba(15,23,42,0.92);
+      z-index: 2000; overflow: auto;
+    }
+    .plano-modal-overlay.active { display: block; }
+    .plano-modal-close {
+      position: fixed; top: 16px; right: 16px; z-index: 2001;
+      width: 44px; height: 44px; border-radius: 50%; margin-top: 0; padding: 0;
+      background: #fff; color: #111827; border: none; font-size: 1.3rem; cursor: pointer;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.35);
+    }
+    .plano-modal-close:hover { background: #f3f4f6; }
+    .plano-modal-body { min-height: 100%; display: flex; align-items: flex-start; justify-content: center; padding: 60px 24px; }
+    .plano-modal-body #planoOut { background: #fff; padding: 24px; border-radius: 14px; max-width: none; }
   </style>
 </head>
 
@@ -378,6 +420,11 @@
       </div>
     </div>
 
+    <div class="btn-group vista-toggle no-print">
+      <button id="btnVerCliente" class="view-toggle-btn active" type="button">👤 Cliente</button>
+      <button id="btnVerTaller" class="view-toggle-btn" type="button">🔧 Taller</button>
+    </div>
+
     <div class="btn-group">
       <button id="btnPrint">🖨 Imprimir (Cliente)</button>
       <button id="btnPrintTaller" class="secondary">🖨 Imprimir (Taller)</button>
@@ -388,11 +435,19 @@
 
   <div class="panel plan">
     <div id="alertOut"></div>
+    <div class="plano-toolbar no-print">
+      <button id="btnAmpliarPlano" class="btn-zoom-plano" type="button">🔍 Ampliar plano</button>
+    </div>
     <div id="planoOut">
       <div style="text-align:center;color:#888;padding:50px;font-style:italic;">
         📐 Introduce las dimensiones y cotas para generar el plano automáticamente
       </div>
     </div>
+  </div>
+
+  <div id="planoModalOverlay" class="plano-modal-overlay no-print">
+    <button id="btnCerrarPlano" class="plano-modal-close" type="button">✕</button>
+    <div id="planoModalBody" class="plano-modal-body"></div>
   </div>
 </div>
 
@@ -907,6 +962,16 @@ const App = (() => {
     return lado === 'izq' ? Math.round(posicion + offset) : Math.round(L_mm - posicion + offset);
   };
 
+  // "A" (manual MODULBOX-400, diagrama "Posicionamiento del terminal"): distancia, sobre
+  // la barra desnuda (sin tapas), desde el extremo del tubo hasta el interior del soporte
+  // brazo. Cota soporte está al centro del soporte brazo, así que se resta 30mm (mitad
+  // soporte brazo) + 22mm (mitad soporte punta/motor) + el grosor de tapa de ese extremo.
+  const calcularABrazo = (posicion, lado, L_mm, grosorTapa) => {
+    if (!grosorTapa) return null;
+    const local = lado === 'izq' ? posicion : (L_mm - posicion);
+    return Math.round(local - 30 - 22 - grosorTapa);
+  };
+
   // Manual MODULBOX-400, 1.5: nº de soportes tejadillo/lira y nº de soportes perfil
   // inferior, según Línea (m). Independiente de Salida y nº de brazos.
   const PERFIL_L = [2,2.5,3,3.5,4,4.5,5,5.5,6,6.5,7,7.5,8,8.5,9,9.5,10,10.5,11,11.5,12];
@@ -961,6 +1026,7 @@ const App = (() => {
       phGrosorTapa: "Ej. 19",
       thCotaTaller: "Cota barra cuadrada (mm)",
       colTerminalTaller: "Terminal barra de carga (mm)",
+      colABrazo: "A (mm)",
       optSi: "Sí",
       optNo: "No",
       optMotorIzq: "Izquierda (I)",
@@ -995,7 +1061,6 @@ const App = (() => {
       colBrazo: "Brazo",
       colSoporte: "Cota soporte (mm)",
       colSoporteTaller: "Cota soporte barra cuadrada (mm)",
-      colTerminal: "Cota terminal (mm)",
       brazoLabel: "Brazo",
       brazoSelect: "— Lado —",
       brazoIzq: "Izq (Roja) → pliega dcha",
@@ -1022,6 +1087,10 @@ const App = (() => {
       confirmCalcularBrazos: "Esto sustituirá las cotas de los brazos ya escritas por el cálculo automático. ¿Continuar?",
       btnPrint: "🖨 Imprimir (Cliente)",
       btnPrintTaller: "🖨 Imprimir (Taller)",
+      btnVerCliente: "👤 Cliente",
+      btnVerTaller: "🔧 Taller",
+      btnAmpliarPlano: "🔍 Ampliar plano",
+      tituloAmpliarClick: "Clic para ampliar el plano",
       btnPDF: "📄 PDF",
       btnExport: "⬇ PNG",
       btnClear: "🗑️ Limpiar todo",
@@ -1053,7 +1122,7 @@ const App = (() => {
       thCota: "Cota (mm)",
       thDesc: "Descripción",
       descMotor: "Posición del cabezal de motorización del eje mecánico",
-      descSoporte: "Distancia desde el extremo izquierdo (0)",
+      descSoporte: "Distancia desde el extremo izquierdo (0) al centro del soporte",
       badgePared: "Soporte Pared",
       badgeBrazoI: "Soporte Brazo I",
       badgeBrazoD: "Soporte Brazo D",
@@ -1085,6 +1154,7 @@ const App = (() => {
       phGrosorTapa: "e.g., 19",
       thCotaTaller: "Square bar dimension (mm)",
       colTerminalTaller: "Load bar terminal (mm)",
+      colABrazo: "A (mm)",
       optSi: "Yes",
       optNo: "No",
       optMotorIzq: "Left (L)",
@@ -1119,7 +1189,6 @@ const App = (() => {
       colBrazo: "Arm",
       colSoporte: "Support position (mm)",
       colSoporteTaller: "Square bar support position (mm)",
-      colTerminal: "Terminal position (mm)",
       brazoLabel: "Arm",
       brazoSelect: "— Side —",
       brazoIzq: "Left (Red band) → folds right",
@@ -1146,6 +1215,10 @@ const App = (() => {
       confirmCalcularBrazos: "This will replace the arm coordinates already entered with the automatic calculation. Continue?",
       btnPrint: "🖨 Print (Client)",
       btnPrintTaller: "🖨 Print (Workshop)",
+      btnVerCliente: "👤 Client",
+      btnVerTaller: "🔧 Workshop",
+      btnAmpliarPlano: "🔍 Enlarge plan",
+      tituloAmpliarClick: "Click to enlarge the plan",
       btnPDF: "📄 PDF",
       btnExport: "⬇ PNG",
       btnClear: "🗑️ Clear All",
@@ -1177,7 +1250,7 @@ const App = (() => {
       thCota: "Dimension (mm)",
       thDesc: "Description",
       descMotor: "Position of the motorized head on the mechanical shaft",
-      descSoporte: "Distance from the left end (0)",
+      descSoporte: "Distance from the left end (0) to the centre of the bracket",
       badgePared: "Wall Bracket",
       badgeBrazoI: "Arm Bracket L",
       badgeBrazoD: "Arm Bracket R",
@@ -1209,6 +1282,7 @@ const App = (() => {
       phGrosorTapa: "Ex. 19",
       thCotaTaller: "Cote barre carrée (mm)",
       colTerminalTaller: "Terminal barre de charge (mm)",
+      colABrazo: "A (mm)",
       optSi: "Oui",
       optNo: "Non",
       optMotorIzq: "Gauche (G)",
@@ -1243,7 +1317,6 @@ const App = (() => {
       colBrazo: "Bras",
       colSoporte: "Position support (mm)",
       colSoporteTaller: "Position support barre carrée (mm)",
-      colTerminal: "Position terminal (mm)",
       brazoLabel: "Bras",
       brazoSelect: "— Côté —",
       brazoIzq: "Gauche (bande rouge) → plie à droite",
@@ -1270,6 +1343,10 @@ const App = (() => {
       confirmCalcularBrazos: "Cela remplacera les coordonnées des bras déjà saisies par le calcul automatique. Continuer ?",
       btnPrint: "🖨 Imprimer (Client)",
       btnPrintTaller: "🖨 Imprimer (Atelier)",
+      btnVerCliente: "👤 Client",
+      btnVerTaller: "🔧 Atelier",
+      btnAmpliarPlano: "🔍 Agrandir le plan",
+      tituloAmpliarClick: "Cliquez pour agrandir le plan",
       btnPDF: "📄 PDF",
       btnExport: "⬇ PNG",
       btnClear: "🗑️ Tout effacer",
@@ -1301,7 +1378,7 @@ const App = (() => {
       thCota: "Cote (mm)",
       thDesc: "Description",
       descMotor: "Position de la tête de motorisation de l'axe mécanique",
-      descSoporte: "Distance depuis l'extrémité gauche (0)",
+      descSoporte: "Distance depuis l'extrémité gauche (0) jusqu'au centre du support",
       badgePared: "Support mural",
       badgeBrazoI: "Support de bras G",
       badgeBrazoD: "Support de bras D",
@@ -1333,6 +1410,7 @@ const App = (() => {
       phGrosorTapa: "Z.B. 19",
       thCotaTaller: "Maß Vierkantstab (mm)",
       colTerminalTaller: "Terminal Laststange (mm)",
+      colABrazo: "A (mm)",
       optSi: "Ja",
       optNo: "Nein",
       optMotorIzq: "Links (L)",
@@ -1367,7 +1445,6 @@ const App = (() => {
       colBrazo: "Arm",
       colSoporte: "Stützposition (mm)",
       colSoporteTaller: "Stützposition Vierkantstab (mm)",
-      colTerminal: "Klemmenposition (mm)",
       brazoLabel: "Arm",
       brazoSelect: "— Seite —",
       brazoIzq: "Links (rotes Band) → faltet nach rechts",
@@ -1394,6 +1471,10 @@ const App = (() => {
       confirmCalcularBrazos: "Dies ersetzt die bereits eingegebenen Armkoordinaten durch die automatische Berechnung. Fortfahren?",
       btnPrint: "🖨 Drucken (Kunde)",
       btnPrintTaller: "🖨 Drucken (Werkstatt)",
+      btnVerCliente: "👤 Kunde",
+      btnVerTaller: "🔧 Werkstatt",
+      btnAmpliarPlano: "🔍 Plan vergrößern",
+      tituloAmpliarClick: "Klicken, um den Plan zu vergrößern",
       btnPDF: "📄 PDF",
       btnExport: "⬇ PNG",
       btnClear: "🗑️ Alles löschen",
@@ -1425,7 +1506,7 @@ const App = (() => {
       thCota: "Position (mm)",
       thDesc: "Beschreibung",
       descMotor: "Position des Motorisierungskopfes der mechanischen Achse",
-      descSoporte: "Abstand vom linken Ende (0)",
+      descSoporte: "Abstand vom linken Ende (0) bis zur Mitte der Halterung",
       badgePared: "Wandstütze",
       badgeBrazoI: "Armstütze L",
       badgeBrazoD: "Armstütze R",
@@ -1457,6 +1538,7 @@ const App = (() => {
       phGrosorTapa: "Es. 19",
       thCotaTaller: "Quota barra quadra (mm)",
       colTerminalTaller: "Terminale barra di carico (mm)",
+      colABrazo: "A (mm)",
       optSi: "Sì",
       optNo: "No",
       optMotorIzq: "Sinistra (S)",
@@ -1491,7 +1573,6 @@ const App = (() => {
       colBrazo: "Braccio",
       colSoporte: "Posizione staffa (mm)",
       colSoporteTaller: "Posizione staffa barra quadra (mm)",
-      colTerminal: "Posizione terminale (mm)",
       brazoLabel: "Braccio",
       brazoSelect: "— Lato —",
       brazoIzq: "Sinistra (banda rossa) → piega a destra",
@@ -1518,6 +1599,10 @@ const App = (() => {
       confirmCalcularBrazos: "Questo sostituirà le coordinate dei bracci già inserite con il calcolo automatico. Continuare?",
       btnPrint: "🖨 Stampa (Cliente)",
       btnPrintTaller: "🖨 Stampa (Officina)",
+      btnVerCliente: "👤 Cliente",
+      btnVerTaller: "🔧 Officina",
+      btnAmpliarPlano: "🔍 Ingrandisci piano",
+      tituloAmpliarClick: "Clicca per ingrandire il piano",
       btnPDF: "📄 PDF",
       btnExport: "⬇ PNG",
       btnClear: "🗑️ Cancella tutto",
@@ -1549,7 +1634,7 @@ const App = (() => {
       thCota: "Posizione (mm)",
       thDesc: "Descrizione",
       descMotor: "Posizione della testa di motorizzazione dell'asse meccanico",
-      descSoporte: "Distanza dall'estremità sinistra (0)",
+      descSoporte: "Distanza dall'estremità sinistra (0) al centro del supporto",
       badgePared: "Staffa a muro",
       badgeBrazoI: "Staffa braccio S",
       badgeBrazoD: "Staffa braccio D",
@@ -1581,6 +1666,7 @@ const App = (() => {
       phGrosorTapa: "Ex. 19",
       thCotaTaller: "Cota barra quadrada (mm)",
       colTerminalTaller: "Terminal barra de carga (mm)",
+      colABrazo: "A (mm)",
       optSi: "Sim",
       optNo: "Não",
       optMotorIzq: "Esquerda (E)",
@@ -1615,7 +1701,6 @@ const App = (() => {
       colBrazo: "Braço",
       colSoporte: "Posição do suporte (mm)",
       colSoporteTaller: "Posição do suporte barra quadrada (mm)",
-      colTerminal: "Posição do terminal (mm)",
       brazoLabel: "Braço",
       brazoSelect: "— Lado —",
       brazoIzq: "Esquerda (faixa vermelha) → dobra para a direita",
@@ -1642,6 +1727,10 @@ const App = (() => {
       confirmCalcularBrazos: "Isto substituirá as coordenadas dos braços já introduzidas pelo cálculo automático. Continuar?",
       btnPrint: "🖨 Imprimir (Cliente)",
       btnPrintTaller: "🖨 Imprimir (Oficina)",
+      btnVerCliente: "👤 Cliente",
+      btnVerTaller: "🔧 Oficina",
+      btnAmpliarPlano: "🔍 Ampliar plano",
+      tituloAmpliarClick: "Clique para ampliar o plano",
       btnPDF: "📄 PDF",
       btnExport: "⬇ PNG",
       btnClear: "🗑️ Limpar tudo",
@@ -1673,7 +1762,7 @@ const App = (() => {
       thCota: "Posição (mm)",
       thDesc: "Descrição",
       descMotor: "Posição da cabeça de motorização do eixo mecânico",
-      descSoporte: "Distância desde a extremidade esquerda (0)",
+      descSoporte: "Distância desde a extremidade esquerda (0) até ao centro do suporte",
       badgePared: "Suporte de parede",
       badgeBrazoI: "Suporte de braço E",
       badgeBrazoD: "Suporte de braço D",
@@ -1726,6 +1815,12 @@ const App = (() => {
     btnCalcularBrazos: document.getElementById('btnCalcularBrazos'),
     btnPrint:        document.getElementById('btnPrint'),
     btnPrintTaller:  document.getElementById('btnPrintTaller'),
+    btnVerCliente:   document.getElementById('btnVerCliente'),
+    btnVerTaller:    document.getElementById('btnVerTaller'),
+    btnAmpliarPlano: document.getElementById('btnAmpliarPlano'),
+    btnCerrarPlano:  document.getElementById('btnCerrarPlano'),
+    planoModalOverlay: document.getElementById('planoModalOverlay'),
+    planoModalBody:  document.getElementById('planoModalBody'),
     btnPDF:          document.getElementById('btnPDF'),
     btnExport:       document.getElementById('btnExport'),
     btnClear:        document.getElementById('btnClear'),
@@ -1941,6 +2036,10 @@ const App = (() => {
     refs.btnCalcularBrazos.textContent = labels.btnCalcularBrazos;
     refs.btnPrint.textContent = labels.btnPrint;
     refs.btnPrintTaller.textContent = labels.btnPrintTaller;
+    refs.btnVerCliente.textContent = labels.btnVerCliente;
+    refs.btnVerTaller.textContent = labels.btnVerTaller;
+    refs.btnAmpliarPlano.textContent = labels.btnAmpliarPlano;
+    refs.planoOut.querySelectorAll('.plano-click-zoom').forEach(el => el.title = labels.tituloAmpliarClick);
     refs.btnPDF.textContent = labels.btnPDF;
     refs.btnExport.textContent = labels.btnExport;
     refs.btnClear.textContent = labels.btnClear;
@@ -2343,6 +2442,27 @@ const App = (() => {
     setTimeout(cleanup, 10000);
   };
 
+  // Muestra en pantalla las mismas cotas/filas que la copia de Taller (sin necesidad
+  // de imprimir): activa/desactiva la clase 'view-taller' en <body> y resalta el
+  // botón "Cliente" o "Taller" correspondiente.
+  const setVistaTaller = (activo) => {
+    document.body.classList.toggle('view-taller', activo);
+    refs.btnVerTaller.classList.toggle('active', activo);
+    refs.btnVerCliente.classList.toggle('active', !activo);
+  };
+
+  const abrirPlanoModal = () => {
+    if (!refs.planoOut.childElementCount) return;
+    refs.planoModalBody.appendChild(refs.planoOut);
+    refs.planoModalOverlay.classList.add('active');
+  };
+
+  const cerrarPlanoModal = () => {
+    if (!refs.planoModalOverlay.classList.contains('active')) return;
+    document.querySelector('.panel.plan').appendChild(refs.planoOut);
+    refs.planoModalOverlay.classList.remove('active');
+  };
+
   const clearData = () => {
     if (confirm(i18n[currentLang].confirmClear)) {
       applyState({ pedido: '', cliente: '', linea: '', salida: '2000', ladoMotor: 'izq', holgura: '50', cotasPared: '', numBrazos: '', observaciones: '', brazosData: [] });
@@ -2471,6 +2591,21 @@ const App = (() => {
     refs.btnPDF.addEventListener('click', exportPDF);
     refs.btnExport.addEventListener('click', exportPNG);
     refs.btnClear.addEventListener('click', clearData);
+    refs.btnVerCliente.addEventListener('click', () => setVistaTaller(false));
+    refs.btnVerTaller.addEventListener('click', () => setVistaTaller(true));
+    refs.btnAmpliarPlano.addEventListener('click', abrirPlanoModal);
+    refs.planoOut.addEventListener('click', (e) => {
+      if (!e.target.closest('.plano-click-zoom')) return;
+      if (refs.planoModalOverlay.classList.contains('active')) cerrarPlanoModal();
+      else abrirPlanoModal();
+    });
+    refs.btnCerrarPlano.addEventListener('click', cerrarPlanoModal);
+    refs.planoModalOverlay.addEventListener('click', (e) => {
+      if (e.target === refs.planoModalOverlay) cerrarPlanoModal();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') cerrarPlanoModal();
+    });
 
     loadState();
     render();
@@ -2534,6 +2669,8 @@ const App = (() => {
     const holgura = Number(refs.holgura.value) || 0;
     const grosorTapa = Number(refs.grosorTapa.value) || 0;
     refs.btnPrintTaller.style.display = grosorTapa ? '' : 'none';
+    refs.btnVerTaller.parentElement.style.display = grosorTapa ? '' : 'none';
+    if (!grosorTapa) setVistaTaller(false);
     const pedido  = refs.pedido.value  || '—';
     const cliente = refs.cliente.value || '—';
     const motor   = refs.ladoMotor.value;
@@ -2729,11 +2866,14 @@ const App = (() => {
     ].sort((a, b) => a.x - b.x);
 
     // Cota "barra cuadrada" = medida real sobre la barra desnuda (sin tapas), para el taller.
-    // Soportes de pared/perfiles: siempre -grosor (referencia siempre desde el extremo izquierdo).
-    // Soportes brazo: izq -grosor, der +grosor (confirmado por el usuario con ejemplos reales).
+    // Soportes de pared/perfiles y soportes brazo: siempre -grosor de tapa (referencia
+    // siempre desde el extremo izquierdo, con o sin tapas). Además, para soportes brazo,
+    // ±30mm (mitad del soporte brazo) para que la marca quede al borde del soporte y no
+    // al centro, donde el propio soporte la taparía: izq -30, der +30.
     const cotaTallerSoporte = (cota, lado) => {
       if (!grosorTapa) return null;
-      if (lado === 'der') return cota + grosorTapa;
+      if (lado === 'der') return cota - grosorTapa + 30;
+      if (lado === 'izq') return cota - grosorTapa - 30;
       return cota - grosorTapa;
     };
 
@@ -2915,6 +3055,7 @@ const App = (() => {
         </div>
       </div>
 
+      <div class="plano-click-zoom" title="${labels.tituloAmpliarClick}">
       <svg viewBox="0 0 ${vbWidth} ${totalHeight}" width="100%">
         <defs>
           <filter id="shadow" x="-5%" y="-5%" width="110%" height="110%">
@@ -2949,6 +3090,7 @@ const App = (() => {
         <text x="${marginLeft + usableWidth + 18}" y="${yBar + 5}" text-anchor="start" font-size="14" font-weight="bold" fill="#111827">${L}</text>
         ${imageElements}
       </svg>
+      </div>
     `;
 
     const tallerTd = (valor) => grosorTapa ? `<td class="col-taller">${valor === null ? '—' : `<b>${valor} mm</b>`}</td>` : '';
@@ -3022,14 +3164,15 @@ const App = (() => {
         const terminal = calcularTerminalBrazo(b.cota, b.lado, L, tieneTejadillo);
         const terminalTaller = grosorTapa ? terminal - grosorTapa : null;
         const soporteTaller = cotaTallerSoporte(b.cota, b.lado);
+        const aBrazo = calcularABrazo(b.cota, b.lado, L, grosorTapa);
         terminalRows += `
           <tr>
             <td>P${b.n}${letra}</td>
             <td>${b.lado === 'izq' ? labels.brazoIzq : labels.brazoDer}</td>
             <td class="col-cliente">${b.cota} mm</td>
             ${grosorTapa ? `<td class="col-taller"><b>${soporteTaller} mm</b></td>` : ''}
-            <td class="col-cliente"><b>${terminal} mm</b></td>
             ${grosorTapa ? `<td class="col-taller"><b>${terminalTaller} mm</b></td>` : ''}
+            ${grosorTapa ? `<td class="col-taller"><b>${aBrazo} mm</b></td>` : ''}
           </tr>
         `;
       });
@@ -3043,8 +3186,8 @@ const App = (() => {
                 <th>${labels.thDesc}</th>
                 <th class="col-cliente">${labels.colSoporte}</th>
                 ${grosorTapa ? `<th class="col-taller">${labels.colSoporteTaller}</th>` : ''}
-                <th class="col-cliente">${labels.colTerminal}</th>
                 ${grosorTapa ? `<th class="col-taller">${labels.colTerminalTaller}</th>` : ''}
+                ${grosorTapa ? `<th class="col-taller">${labels.colABrazo}</th>` : ''}
               </tr>
             </thead>
             <tbody>${terminalRows}</tbody>

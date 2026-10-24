@@ -1112,10 +1112,9 @@ const App = (() => {
     return lado === 'izq' ? Math.round(posicion + offset) : Math.round(L_mm - posicion + offset);
   };
 
-  // "A" (manual MODULBOX-400, diagrama "Posicionamiento del terminal"): distancia, sobre
-  // la barra desnuda (sin tapas), desde el extremo del tubo hasta el interior del soporte
-  // brazo. Cota soporte está al centro del soporte brazo, así que se resta 30mm (mitad
-  // soporte brazo) + 22mm (mitad soporte punta/motor) + el grosor de tapa de ese extremo.
+  // "A" (manual MODULBOX-400, diagrama "Posicionamiento del terminal"): hueco entre la cara
+  // interior del soporte motor/punta (tapa + 22 mm de soporte) y la cara del soporte brazo
+  // que mira a ese extremo (cota al centro − 30, mitad del soporte brazo). Izq desde 0, Der desde L.
   const calcularABrazo = (posicion, lado, L_mm, grosorTapa) => {
     if (!grosorTapa) return null;
     const local = lado === 'izq' ? posicion : (L_mm - posicion);
@@ -3354,9 +3353,10 @@ const App = (() => {
       `;
     }
 
-    // Soporte motor y soporte punta: 20 mm cada uno, justo después de la tapa de su extremo.
+    // Soporte motor y soporte punta: 22 mm cada uno, justo después de la tapa de su extremo
+    // (la barra cuadrada entra dentro del soporte, así que no la acorta).
     // A escala real serían unos pocos píxeles, así que se dibujan con un ancho mínimo visible.
-    const SOPORTE_EXTREMO_MM = 20;
+    const SOPORTE_EXTREMO_MM = 22;
     const anchoSopExtremo = Math.max(SOPORTE_EXTREMO_MM * scale, 7);
     const txtSopMotor = t3('S. motor', 'Motor bkt', 'S. moteur', 'Motorlager', 'S. motore', 'S. motor');
     const txtSopPunta = t3('S. punta', 'End bkt', 'S. bout', 'Endlager', 'S. punta', 'S. ponta');

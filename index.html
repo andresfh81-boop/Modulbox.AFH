@@ -653,6 +653,32 @@ const App = (() => {
   // a 4000mm por las propias opciones del <select> de Salida, no hace falta validarlo aquí).
   const LINEA_MAX_POR_BRAZOS = { 2: 6000, 3: 9000, 4: 12000 };
 
+  // Manual MODULBOX-400 (junio 2024) pág. 4, «1.3 Línea mínimas»: L mín. (mm) por salida (Andrés, 26-oct-2026:
+  // manda la de 2024 sobre la de 2021 y sobre las tablas Excel). m2/m3/m4 = motor 2/3/4 brazos; q2 = máquina
+  // 2 brazos; bcm/bcq = brazos cruzados motor/máquina. null = el manual no da esa combinación (no se fabrica).
+  const LINEA_MIN_MANUAL = {
+    1500: { m2: 2057, m3: 3055, m4: 4052, q2: 2102, bcm: 1447, bcq: 1492 },
+    1750: { m2: 2307, m3: 3430, m4: 4552, q2: 2352, bcm: 1572, bcq: 1617 },
+    2000: { m2: 2557, m3: 3805, m4: 5052, q2: 2602, bcm: 1697, bcq: 1742 },
+    2250: { m2: 2807, m3: 4180, m4: 5552, q2: 2852, bcm: 1822, bcq: 1867 },
+    2500: { m2: 3057, m3: 4555, m4: 6052, q2: 3102, bcm: 1947, bcq: 1992 },
+    2750: { m2: 3427, m3: 5050, m4: 6672, q2: 3472, bcm: 2192, bcq: 2237 },
+    3000: { m2: 3677, m3: 5425, m4: 7172, q2: 3722, bcm: 2317, bcq: 2362 },
+    3250: { m2: 3927, m3: 5800, m4: 7672, q2: null, bcm: 2442, bcq: null },
+    3500: { m2: 4177, m3: 6175, m4: 8172, q2: null, bcm: 2567, bcq: null },
+    3750: { m2: 4427, m3: 6550, m4: 8672, q2: null, bcm: 2692, bcq: null },
+    4000: { m2: 4677, m3: 6925, m4: 9172, q2: null, bcm: 2817, bcq: null },
+  };
+  // undefined = salida o nº de brazos sin dato; null = combinación que el manual no da (máquina con 3–4 brazos…).
+  const getLineaMinimaManual = (S_mm, nbrazos, maquina, bc) => {
+    const fila = LINEA_MIN_MANUAL[S_mm];
+    if (!fila || ![2, 3, 4].includes(nbrazos)) return undefined;
+    const q = maquina === 'SI';
+    if (nbrazos === 2 && bc === 'SI') return q ? fila.bcq : fila.bcm;
+    if (nbrazos > 2) return q ? null : fila['m' + nbrazos];
+    return q ? fila.q2 : fila.m2;
+  };
+
   // Tabla "L3_2/3/4brazos" (+ variante _bc para 2 brazos con Brazos Cruzados) del mismo Excel:
   // margen (mm) desde el extremo del tubo hasta el primer/último soporte de pared.
   const L3_TABLES = {
@@ -2012,6 +2038,31 @@ const App = (() => {
     const map = { es, en, fr, de, it, pt };
     return map[currentLang] ?? en;
   };
+  // Aviso de línea fuera del manual MODULBOX-400 2024 (pág. 4 mínimas, 1.7 máximas). lMin null = combinación sin dato.
+  const textoFueraManual = (L, S, n, lMin, lMax) => {
+    const caso = `S ${S} mm, ${n} ${t3('brazos', 'arms', 'bras', 'Arme', 'bracci', 'braços')}`;
+    if (lMin === null) return '⚠ ' + t3(
+      `El manual (pág. 4) no da línea mínima para esta combinación (${caso}, motor/máquina y brazos cruzados elegidos): no es una configuración del manual.`,
+      `The manual (p. 4) gives no minimum width for this combination (${caso}, chosen motor/gearbox and crossed arms): it is not a manual configuration.`,
+      `Le manuel (p. 4) ne donne pas de largeur minimale pour cette combinaison (${caso}, moteur/treuil et bras croisés choisis) : ce n'est pas une configuration du manuel.`,
+      `Das Handbuch (S. 4) nennt keine Mindeststrecke für diese Kombination (${caso}, gewählter Motor/Getriebe und gekreuzte Arme): keine Konfiguration des Handbuchs.`,
+      `Il manuale (pag. 4) non dà la lunghezza minima per questa combinazione (${caso}, motore/argano e bracci incrociati scelti): non è una configurazione del manuale.`,
+      `O manual (pág. 4) não dá largura mínima para esta combinação (${caso}, motor/máquina e braços cruzados escolhidos): não é uma configuração do manual.`);
+    if (lMin && L < lMin) return '⚠ ' + t3(
+      `Línea por debajo de la mínima del manual (pág. 4): ${L} mm < ${lMin} mm (${caso}).`,
+      `Width below the manual minimum (p. 4): ${L} mm < ${lMin} mm (${caso}).`,
+      `Largeur inférieure au minimum du manuel (p. 4) : ${L} mm < ${lMin} mm (${caso}).`,
+      `Strecke unter dem Minimum des Handbuchs (S. 4): ${L} mm < ${lMin} mm (${caso}).`,
+      `Lunghezza sotto il minimo del manuale (pag. 4): ${L} mm < ${lMin} mm (${caso}).`,
+      `Largura abaixo da mínima do manual (pág. 4): ${L} mm < ${lMin} mm (${caso}).`);
+    return '⚠ ' + t3(
+      `Línea por encima de la máxima del manual (1.7): ${L} mm > ${lMax} mm (${caso}).`,
+      `Width above the manual maximum (1.7): ${L} mm > ${lMax} mm (${caso}).`,
+      `Largeur supérieure au maximum du manuel (1.7) : ${L} mm > ${lMax} mm (${caso}).`,
+      `Strecke über dem Maximum des Handbuchs (1.7): ${L} mm > ${lMax} mm (${caso}).`,
+      `Lunghezza sopra il massimo del manuale (1.7): ${L} mm > ${lMax} mm (${caso}).`,
+      `Largura acima da máxima do manual (1.7): ${L} mm > ${lMax} mm (${caso}).`);
+  };
   // Mano del brazo en su código (B1-Izq, B2-Der…), abreviada en cada idioma.
   const ladoLetra = (lado) => lado === 'der' ? t3('Der', 'R', 'D', 'R', 'Dx', 'Dir') : t3('Izq', 'L', 'G', 'L', 'Sx', 'Esq');
 
@@ -2699,6 +2750,20 @@ const App = (() => {
       alert(labels.errCalcularFaltaLado);
       return;
     }
+    // El cálculo automático nunca da algo fuera del manual: por debajo de la línea mínima, por encima
+    // de la máxima o en una combinación que el manual no da, no calcula (a mano se puede y solo avisa).
+    const lMinManual = getLineaMinimaManual(S, nbrazos, refs.maquina.value, bc);
+    const lMaxManual = LINEA_MAX_POR_BRAZOS[nbrazos];
+    if (lMinManual === null || (lMinManual && L < lMinManual) || (lMaxManual && L > lMaxManual)) {
+      alert(textoFueraManual(L, S, nbrazos, lMinManual, lMaxManual) + '\n' + t3(
+        'El cálculo automático no puede saltarse el manual. Puedes escribir las cotas a mano.',
+        'The automatic calculation cannot break the manual. You can type the positions by hand.',
+        'Le calcul automatique ne peut pas sortir du manuel. Vous pouvez saisir les cotes à la main.',
+        'Die automatische Berechnung darf das Handbuch nicht verletzen. Sie können die Maße von Hand eingeben.',
+        'Il calcolo automatico non può violare il manuale. Puoi scrivere le quote a mano.',
+        'O cálculo automático não pode fugir ao manual. Pode escrever as cotas à mão.'));
+      return;
+    }
     const result = calcularPosicionesBrazos(S, L, nbrazos, bc, ladoArray);
     if (result.error === 'sin_datos') {
       alert(labels.errCalcularInvalido);
@@ -3065,6 +3130,8 @@ const App = (() => {
       ? getSoportesPared(S, L, numBrazosVal)
       : null;
     const lineaMinima = (S > 0 && [2,3,4].includes(numBrazosVal)) ? getLineaMinima(S, numBrazosVal) : null;
+    const lineaMinManual = (S > 0 && [2,3,4].includes(numBrazosVal)) ? getLineaMinimaManual(S, numBrazosVal, refs.maquina.value, refs.brazosCruzados.value) : undefined;
+    const fueraMinManual = L > 0 && (lineaMinManual === null || (lineaMinManual && L < lineaMinManual));
     const lineaMaxima = LINEA_MAX_POR_BRAZOS[numBrazosVal] || null;
     const excedeLineaMax = L > 0 && lineaMaxima != null && L > lineaMaxima;
 
@@ -3262,6 +3329,9 @@ const App = (() => {
     }
     if (excedeLineaMax) {
       alertHtml += `<div class="alert danger"><div>${labels.errLineaMaximaPre}${numBrazosVal}${labels.errLineaMaximaMid}${lineaMaxima}mm (${L}mm)</div></div>`;
+    }
+    if (fueraMinManual) {
+      alertHtml += `<div class="alert danger"><div>${textoFueraManual(L, S, numBrazosVal, lineaMinManual, null)}</div></div>`;
     }
 
     refs.alertOut.innerHTML = alertHtml;

@@ -1162,6 +1162,9 @@ const App = (() => {
   // mano (Izq hacia la izquierda, Der hacia la derecha), salvo que así caiga encima de otro.
   const DESPLAZ_BRAZO_PERFIL = 30;
   const chocaConPerfil = (cota, perfilPos) => perfilPos.some(p => Math.abs(p - cota) < DESPLAZ_BRAZO_PERFIL);
+  // L > 7000: distancia mínima (entre centros) de un soporte brazo a la unión de cofres (L/2):
+  // 200 mm (criterio de Andrés, 26-oct-2026).
+  const UNION_LIBRE = 200;
 
   // Cotas de los soportes de Tejadillo, Lira Posterior y Lira/Cofre (mismo cálculo que el plano).
   const posicionesSoportesTejadilloLira = (L) => {
@@ -2662,6 +2665,8 @@ const App = (() => {
         // Si apartándolo cae encima de otro soporte, se deja y el plano avisa de la colisión.
         if (!chocaConPerfil(movido, perfilPos)) pos = movido;
       }
+      // Un soporte brazo nunca puede caer en la unión de cofres: se aparta hacia su lado.
+      if (L > 7000 && Math.abs(pos - L / 2) < UNION_LIBRE) pos = Math.round(L / 2 + (ladoArray[idx] === 'izq' ? -UNION_LIBRE : UNION_LIBRE));
       const cotaEl = document.getElementById('cota' + (idx + 1));
       if (cotaEl) cotaEl.value = pos;
     });
@@ -3116,6 +3121,8 @@ const App = (() => {
       'KOLLISION: Konsolen mit weniger als 30 mm Mittenabstand (in der Werkstatt-Ansicht/-Kopie mit ⚠ markiert). In der Werkstatt etwas verschieben:',
       'COLLISIONE: supporti a meno di 30 mm tra i centri (segnati con ⚠ nella vista/copia Officina). Spostali leggermente in officina:',
       'COLISÃO: suportes a menos de 30 mm entre centros (marcados com ⚠ na vista/cópia Oficina). Desloque-os um pouco na oficina:')}</b></div>${choquesPerfil.map(c => `<div>· ${c}</div>`).join('')}</div>`;
+    const enUnion = L > 7000 ? brazos.filter(b => Math.abs(b.cota - L / 2) < UNION_LIBRE) : [];
+    if (enUnion.length) alertHtml += `<div class="alert danger"><div>⚠ <b>${t3('Unión de cofres', 'Cassette joint', 'Jonction des coffres', 'Kassettenverbindung', 'Giunzione cassonetti', 'União de cofres')} (${Math.round(L / 2)} mm)</b> ${t3('encima de', 'on top of', 'sur', 'über', 'sopra', 'em cima de')} ${enUnion.map(b => `B${b.n}-${ladoLetra(b.lado)} (${b.cota} mm)`).join(', ')}: ${t3('el soporte brazo nunca puede coincidir con la unión; muévelo', 'the arm bracket can never match the joint; move it', 'le support de bras ne doit jamais coïncider avec la jonction ; déplacez-le', 'die Armkonsole darf nie auf der Verbindung liegen; verschieben', 'il supporto braccio non può mai coincidere con la giunzione; spostalo', 'o suporte do braço nunca pode coincidir com a união; mova-o')}.</div></div>`;
     if (colisionesPlegado.length) alertHtml += `<div class="alert danger">${colisionesPlegado.map(c=>`<div>${c}</div>`).join('')}</div>`;
     const paredesPegadasBorde = paredes
       .map((c, idx) => ({ id: idx + 1, borde: Math.min(c - grosorTapa, L - grosorTapa - c) }))
@@ -3550,7 +3557,27 @@ const App = (() => {
       imageElements += `<g${it.clase ? ` class="${it.clase}"` : ''}>${it.sim(xLeyenda, yLeyenda)}<text x="${xLeyenda + 22}" y="${yLeyenda + 3.5}" font-size="10" fill="#374151">${it.txt}</text></g>`;
       xLeyenda += ancho;
     });
-    const totalHeight = yLeyenda + 14;
+    // L > 7000: la unión de los dos cofres, remarcada en rojo en la barra, con L1 y L2 arriba y,
+    // debajo de la leyenda, el dibujo del manual (pág. 57): la unión, sobre un soporte.
+    let yFinal = yLeyenda + 14;
+    if (L > 7000) {
+      const col = '#c0102e', xu = marginLeft + (L / 2) * scale, xB = marginLeft + usableWidth, L1 = Math.round(L / 2), yC = 46;
+      const flecha = (a, b, txt) => `
+        <line x1="${a + 4}" y1="${yC}" x2="${b - 4}" y2="${yC}" stroke="${col}" stroke-width="1.6"/>
+        <path d="M${a} ${yC} l9 -4.5 v9 z M${b} ${yC} l-9 -4.5 v9 z" fill="${col}"/>
+        <text x="${(a + b) / 2}" y="${yC - 8}" font-size="15" font-weight="800" fill="${col}" text-anchor="middle">${txt}</text>`;
+      const yI = yLeyenda + 28, wI = 270, hI = 180;
+      imageElements += `
+        <line x1="${xu}" y1="${yC}" x2="${xu}" y2="${yBar - 26}" stroke="${col}" stroke-width="1.5" stroke-dasharray="7 4" opacity=".75"/>
+        <rect x="${xu - 5}" y="${yBar - 26}" width="10" height="52" fill="${col}"/>
+        ${flecha(marginLeft, xu, `L1 = ${L1} mm`)}${flecha(xu, xB, `L2 = ${L - L1} mm`)}
+        <text x="${xu}" y="${yC + 17}" font-size="11" font-weight="800" fill="${col}" text-anchor="middle">${t3('UNIÓN DE COFRES', 'CASSETTE JOINT', 'JONCTION DES COFFRES', 'KASSETTENVERBINDUNG', 'GIUNZIONE CASSONETTI', 'UNIÃO DE COFRES')}</text>
+        <rect x="${xu - wI / 2 - 4}" y="${yI}" width="${wI + 8}" height="${hI + 8}" rx="5" fill="#fff" stroke="${col}" stroke-width="1.5"/>
+        ${typeof UNION_MODULBOX === 'string' ? `<image href="${UNION_MODULBOX}" x="${xu - wI / 2}" y="${yI + 4}" width="${wI}" height="${hI}"/>` : ''}
+        <text x="${xu}" y="${yI + hI + 26}" font-size="11" font-weight="700" fill="${col}" text-anchor="middle">${t3('Unión de cofres (L > 7 m) · manual pág. 57: hacer coincidir la unión de la barra cuadrada con un soporte', 'Cassette joint (L > 7 m) · manual p. 57: make the square bar joint match a bracket', 'Jonction des coffres (L > 7 m) · manuel p. 57 : faire coïncider la jonction de la barre carrée avec un support', 'Kassettenverbindung (L > 7 m) · Handbuch S. 57: Stoß der Vierkantstange auf eine Konsole legen', 'Giunzione cassonetti (L > 7 m) · manuale p. 57: far coincidere la giunzione della barra quadra con un supporto', 'União de cofres (L > 7 m) · manual p. 57: fazer coincidir a união da barra quadrada com um suporte')}</text>`;
+      yFinal = yI + hI + 40;
+    }
+    const totalHeight = yFinal;
 
     // SVG del plano, generado una sola vez y reutilizado tal cual dentro de la lupa
     // (misma viewBox, así que basta con escalarlo con CSS para ampliarlo sin perder nitidez).

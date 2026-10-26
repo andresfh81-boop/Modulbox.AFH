@@ -370,7 +370,12 @@
           <label id="lblGrosorTapa" for="grosorTapa">🧵 Grosor de tapa (mm)</label>
           <input id="grosorTapa" type="number" min="0" value="19" placeholder="Ej. 19" />
         </div>
+        <div id="filaUnion" style="display:none">
+          <label id="lblPosUnion" for="posUnion">✂️ Unión de cofres (mm)</label>
+          <input id="posUnion" type="number" min="0" placeholder="Centro" />
+        </div>
       </div>
+      <div id="notaUnion" style="display:none; font-size:12px; color:#6b7280; margin-top:4px;"></div>
     </div>
 
     <button id="btnClear" class="clear" style="margin-bottom:4px;">🗑️ Limpiar todo</button>
@@ -773,6 +778,12 @@ const App = (() => {
   const SOPORTE_GAP_MAX = 2000;    // mm, ningún hueco entre soportes de pared puede superar esto (líneas largas)
   const SOPORTE_BORDE_MIN_TALLER = 30; // mm, mínimo desde el borde de la barra sin tapa (cota taller) a un soporte de pared
   const UNION_SOPORTE = 500;       // mm, L > 7000: único soporte de pared de la unión de cofres, donde se empalma la barra cuadrada (criterio de Andrés, 26-oct-2026)
+  // Cota de la unión de cofres (L > 7000): en el centro salvo que se escriba otra (cliente que no
+  // puede poner el soporte de la unión porque ahí la pared no es maciza; criterio de Andrés, 26-oct-2026).
+  const cotaUnion = (L) => {
+    const v = Number(refs.posUnion.value);
+    return refs.posUnion.value !== '' && v > 0 && v < L ? v : L / 2;
+  };
 
   // Reparte huecos > maxGap añadiendo soportes intermedios equidistantes dentro de ese hueco.
   const rellenarHuecosGrandes = (posicionesOrdenadas, maxGap) => {
@@ -815,7 +826,7 @@ const App = (() => {
     // si se añadiera otro a UNION_SOPORTE, quedarían montados (antes salía INTERFERENCIA con 3 brazos y S 3,75/4,00).
     const partido = L_mm > 7000;
     if (partido) {
-      const mid = L_mm / 2;
+      const mid = cotaUnion(L_mm);
       if (!positions.some(p => Math.abs(p - mid) < UNION_SOPORTE + SOPORTE_SOLAPE)) {
         const cercano = brazosOrdenados.reduce((a, b) => Math.abs(b.cota - mid) < Math.abs(a.cota - mid) ? b : a);
         positions.push(mid + (cercano.lado === 'der' ? UNION_SOPORTE : -UNION_SOPORTE));
@@ -2014,6 +2025,7 @@ const App = (() => {
     ladoMotor:       document.getElementById('ladoMotor'),
     holgura:         document.getElementById('holgura'),
     grosorTapa:      document.getElementById('grosorTapa'),
+    posUnion:        document.getElementById('posUnion'),
     cotasPared:      document.getElementById('cotasPared'),
     numBrazos:       document.getElementById('numBrazos'),
     brazosCruzados:  document.getElementById('brazosCruzados'),
@@ -2070,6 +2082,7 @@ const App = (() => {
       ladoMotor:  refs.ladoMotor.value,
       holgura:    refs.holgura.value,
       grosorTapa: refs.grosorTapa.value,
+      posUnion:   refs.posUnion.value,
       cotasPared: refs.cotasPared.value,
       numBrazos:  refs.numBrazos.value,
       brazosCruzados: refs.brazosCruzados.value,
@@ -2107,6 +2120,7 @@ const App = (() => {
     refs.ladoMotor.value  = state.ladoMotor  || 'izq';
     refs.holgura.value    = state.holgura    || '0';
     refs.grosorTapa.value = state.grosorTapa || '19';
+    refs.posUnion.value   = state.posUnion   || '';
     refs.cotasPared.value = state.cotasPared || '';
     refs.numBrazos.value  = state.numBrazos  || '';
     refs.brazosCruzados.value = state.brazosCruzados || 'NO';
@@ -2713,7 +2727,7 @@ const App = (() => {
       // Cerca de la unión de cofres, el soporte brazo se aparta hacia su lado hasta que su soporte
       // de pared más cercano quede a UNION_SOPORTE de la unión: ahí se empalma la barra cuadrada.
       const apartar = UNION_SOPORTE + SOPORTE_OFFSET;
-      if (L > 7000 && Math.abs(pos - L / 2) < apartar) pos = Math.round(L / 2 + (ladoArray[idx] === 'izq' ? -apartar : apartar));
+      if (L > 7000 && Math.abs(pos - cotaUnion(L)) < apartar) pos = Math.round(cotaUnion(L) + (ladoArray[idx] === 'izq' ? -apartar : apartar));
       const cotaEl = document.getElementById('cota' + (idx + 1));
       if (cotaEl) cotaEl.value = pos;
     });
@@ -2885,7 +2899,7 @@ const App = (() => {
   };
 
   const init = () => {
-    const inputs = [refs.pedido, refs.cliente, refs.modelo, refs.maquina, refs.linea, refs.salida, refs.ladoMotor, refs.holgura, refs.grosorTapa, refs.cotasPared, refs.brazosCruzados,
+    const inputs = [refs.pedido, refs.cliente, refs.modelo, refs.maquina, refs.linea, refs.salida, refs.ladoMotor, refs.holgura, refs.grosorTapa, refs.posUnion, refs.cotasPared, refs.brazosCruzados,
       refs.perfilTejadillo, refs.numTejadillo, refs.perfilLiraPosterior, refs.numLiraPosterior, refs.perfilLiraCofre, refs.numLiraCofre, refs.perfilInferior, refs.numInferior, refs.cotasTejadillo, refs.cotasInferior];
     inputs.forEach(el => {
       el.addEventListener('input', scheduleRender);
@@ -2911,6 +2925,24 @@ const App = (() => {
       const f = e.target.files && e.target.files[0];
       e.target.value = '';
       procesarPresupuesto(f);
+    });
+    // Arrastrar el presupuesto (foto/PDF) a cualquier parte de la app hace lo mismo que «Subir presupuesto».
+    const hayArchivo = e => [...(e.dataTransfer?.types || [])].includes('Files');
+    let arrastres = 0;
+    const capaSoltar = document.createElement('div');
+    capaSoltar.style.cssText = 'position:fixed;inset:12px;z-index:9999;display:none;align-items:center;justify-content:center;text-align:center;padding:20px;border:4px dashed #c0102e;border-radius:16px;background:rgba(255,255,255,.88);font:700 26px system-ui,sans-serif;color:#c0102e;pointer-events:none';
+    document.body.appendChild(capaSoltar);
+    const mostrarCapa = v => { capaSoltar.textContent = refs.btnUploadPresupuesto.textContent; capaSoltar.style.display = v ? 'flex' : 'none'; };
+    window.addEventListener('dragenter', e => { if (!hayArchivo(e)) return; e.preventDefault(); arrastres++; mostrarCapa(true); });
+    window.addEventListener('dragover', e => { if (hayArchivo(e)) e.preventDefault(); });
+    window.addEventListener('dragleave', e => { if (hayArchivo(e) && --arrastres <= 0) { arrastres = 0; mostrarCapa(false); } });
+    window.addEventListener('drop', e => {
+      if (!hayArchivo(e)) return;
+      e.preventDefault();
+      arrastres = 0;
+      mostrarCapa(false);
+      const f = [...e.dataTransfer.files].find(x => x.type === 'application/pdf' || x.type.startsWith('image/'));
+      if (f) procesarPresupuesto(f);
     });
     refs.btnSugerir.addEventListener('click', sugerirSoportes);
     refs.btnEditarTejadillo.addEventListener('click', () => editarCotasPerfil(refs.cotasTejadillo, 'tejadillo'));
@@ -2999,6 +3031,21 @@ const App = (() => {
 
   const render = () => {
     const L       = Number(refs.linea.value) || 0;
+    // Unión de cofres editable (solo L > 7000): vacía = en el centro.
+    document.getElementById('filaUnion').style.display = L > 7000 ? '' : 'none';
+    const notaUnion = document.getElementById('notaUnion');
+    notaUnion.style.display = L > 7000 ? '' : 'none';
+    document.getElementById('lblPosUnion').textContent = t3('✂️ Unión de cofres (mm)', '✂️ Cassette joint (mm)', '✂️ Jonction des coffres (mm)', '✂️ Kassettenverbindung (mm)', '✂️ Giunzione cassonetti (mm)', '✂️ União de cofres (mm)');
+    refs.posUnion.placeholder = `${t3('Centro', 'Centre', 'Centre', 'Mitte', 'Centro', 'Centro')}: ${Math.round(L / 2)}`;
+    const sinIcono = k => i18n[currentLang][k].replace(/^\S+\s/, '');
+    notaUnion.textContent = t3(
+      'Unión de cofres: vacía = en el centro. Desplázala si el cliente no puede poner ahí el soporte (pared no maciza). Luego pulsa',
+      'Cassette joint: empty = in the centre. Move it if the customer cannot fit the bracket there (non-solid wall). Then press',
+      'Jonction des coffres : vide = au centre. Déplacez-la si le client ne peut pas y poser le support (mur non plein). Puis appuyez sur',
+      'Kassettenverbindung: leer = in der Mitte. Verschieben, wenn der Kunde dort keine Konsole setzen kann (keine massive Wand). Danach',
+      'Giunzione cassonetti: vuota = al centro. Spostala se il cliente non può mettere lì il supporto (parete non piena). Poi premi',
+      'União de cofres: vazia = no centro. Desloque-a se o cliente não puder pôr lá o suporte (parede não maciça). Depois carregue em')
+      + ` «${sinIcono('btnCalcularBrazos')}» ${t3('y', 'and', 'et', 'und', 'e', 'e')} «${sinIcono('btnSugerir')}».`;
     const S       = Number(refs.salida.value) || 0;
     const holgura = Number(refs.holgura.value) || 0;
     const grosorTapa = Number(refs.grosorTapa.value) || 0;
@@ -3168,8 +3215,9 @@ const App = (() => {
       'KOLLISION: Konsolen mit weniger als 30 mm Mittenabstand (in der Werkstatt-Ansicht/-Kopie mit ⚠ markiert). In der Werkstatt etwas verschieben:',
       'COLLISIONE: supporti a meno di 30 mm tra i centri (segnati con ⚠ nella vista/copia Officina). Spostali leggermente in officina:',
       'COLISÃO: suportes a menos de 30 mm entre centros (marcados com ⚠ na vista/cópia Oficina). Desloque-os um pouco na oficina:')}</b></div>${choquesPerfil.map(c => `<div>· ${c}</div>`).join('')}</div>`;
-    const enUnion = L > 7000 ? brazos.filter(b => Math.abs(b.cota - L / 2) < UNION_LIBRE) : [];
-    if (enUnion.length) alertHtml += `<div class="alert danger"><div>⚠ <b>${t3('Unión de cofres', 'Cassette joint', 'Jonction des coffres', 'Kassettenverbindung', 'Giunzione cassonetti', 'União de cofres')} (${Math.round(L / 2)} mm)</b> ${t3('encima de', 'on top of', 'sur', 'über', 'sopra', 'em cima de')} ${enUnion.map(b => `B${b.n}-${ladoLetra(b.lado)} (${b.cota} mm)`).join(', ')}: ${t3('el soporte brazo nunca puede coincidir con la unión; muévelo', 'the arm bracket can never match the joint; move it', 'le support de bras ne doit jamais coïncider avec la jonction ; déplacez-le', 'die Armkonsole darf nie auf der Verbindung liegen; verschieben', 'il supporto braccio non può mai coincidere con la giunzione; spostalo', 'o suporte do braço nunca pode coincidir com a união; mova-o')}.</div></div>`;
+    const U = cotaUnion(L);
+    const enUnion = L > 7000 ? brazos.filter(b => Math.abs(b.cota - U) < UNION_LIBRE) : [];
+    if (enUnion.length) alertHtml += `<div class="alert danger"><div>⚠ <b>${t3('Unión de cofres', 'Cassette joint', 'Jonction des coffres', 'Kassettenverbindung', 'Giunzione cassonetti', 'União de cofres')} (${Math.round(U)} mm)</b> ${t3('encima de', 'on top of', 'sur', 'über', 'sopra', 'em cima de')} ${enUnion.map(b => `B${b.n}-${ladoLetra(b.lado)} (${b.cota} mm)`).join(', ')}: ${t3('el soporte brazo nunca puede coincidir con la unión; muévelo', 'the arm bracket can never match the joint; move it', 'le support de bras ne doit jamais coïncider avec la jonction ; déplacez-le', 'die Armkonsole darf nie auf der Verbindung liegen; verschieben', 'il supporto braccio non può mai coincidere con la giunzione; spostalo', 'o suporte do braço nunca pode coincidir com a união; mova-o')}.</div></div>`;
     if (colisionesPlegado.length) alertHtml += `<div class="alert danger">${colisionesPlegado.map(c=>`<div>${c}</div>`).join('')}</div>`;
     const paredesPegadasBorde = paredes
       .map((c, idx) => ({ id: idx + 1, borde: Math.min(c - grosorTapa, L - grosorTapa - c) }))
@@ -3192,13 +3240,13 @@ const App = (() => {
       `Supporto a parete a ${extremosLargos.map(Math.round).join(' / ')} mm dall'estremità: il manuale (pag. 4–5) chiede un altro supporto a meno di ${SOPORTE_EXTREMO_MAX} mm.`,
       `Suporte de parede a ${extremosLargos.map(Math.round).join(' / ')} mm do extremo: o manual (pág. 4–5) pede outro suporte a menos de ${SOPORTE_EXTREMO_MAX} mm.`)}</div></div>`;
     // Manual pág. 57: la unión de la barra cuadrada tiene que coincidir con un soporte (a UNION_SOPORTE de la unión de cofres).
-    if (L > 7000 && paredes.length && !paredes.some(p => Math.abs(p - L / 2) < UNION_SOPORTE + SOPORTE_SOLAPE)) alertHtml += `<div class="alert danger"><div>⚠ ${t3(
-      `Ningún soporte de pared cerca de la unión de cofres (${Math.round(L / 2)} mm): la unión de la barra cuadrada tiene que coincidir con un soporte (manual pág. 57); ponlo a ${UNION_SOPORTE} mm de la unión.`,
-      `No wall bracket near the cassette joint (${Math.round(L / 2)} mm): the square bar joint must match a bracket (manual p. 57); place it ${UNION_SOPORTE} mm from the joint.`,
-      `Aucun support mural près de la jonction des coffres (${Math.round(L / 2)} mm) : la jonction de la barre carrée doit coïncider avec un support (manuel p. 57) ; placez-le à ${UNION_SOPORTE} mm de la jonction.`,
-      `Keine Wandkonsole nahe der Kassettenverbindung (${Math.round(L / 2)} mm): Die Verbindung der Vierkantstange muss auf einer Konsole liegen (Handbuch S. 57); im Abstand von ${UNION_SOPORTE} mm setzen.`,
-      `Nessun supporto a parete vicino alla giunzione dei cassonetti (${Math.round(L / 2)} mm): la giunzione della barra quadra deve coincidere con un supporto (manuale pag. 57); mettilo a ${UNION_SOPORTE} mm dalla giunzione.`,
-      `Nenhum suporte de parede perto da união dos cofres (${Math.round(L / 2)} mm): a união da barra quadrada tem de coincidir com um suporte (manual pág. 57); coloque-o a ${UNION_SOPORTE} mm da união.`)}</div></div>`;
+    if (L > 7000 && paredes.length && !paredes.some(p => Math.abs(p - U) < UNION_SOPORTE + SOPORTE_SOLAPE)) alertHtml += `<div class="alert danger"><div>⚠ ${t3(
+      `Ningún soporte de pared cerca de la unión de cofres (${Math.round(U)} mm): la unión de la barra cuadrada tiene que coincidir con un soporte (manual pág. 57); ponlo a ${UNION_SOPORTE} mm de la unión.`,
+      `No wall bracket near the cassette joint (${Math.round(U)} mm): the square bar joint must match a bracket (manual p. 57); place it ${UNION_SOPORTE} mm from the joint.`,
+      `Aucun support mural près de la jonction des coffres (${Math.round(U)} mm) : la jonction de la barre carrée doit coïncider avec un support (manuel p. 57) ; placez-le à ${UNION_SOPORTE} mm de la jonction.`,
+      `Keine Wandkonsole nahe der Kassettenverbindung (${Math.round(U)} mm): Die Verbindung der Vierkantstange muss auf einer Konsole liegen (Handbuch S. 57); im Abstand von ${UNION_SOPORTE} mm setzen.`,
+      `Nessun supporto a parete vicino alla giunzione dei cassonetti (${Math.round(U)} mm): la giunzione della barra quadra deve coincidere con un supporto (manuale pag. 57); mettilo a ${UNION_SOPORTE} mm dalla giunzione.`,
+      `Nenhum suporte de parede perto da união dos cofres (${Math.round(U)} mm): a união da barra quadrada tem de coincidir com um suporte (manual pág. 57); coloque-o a ${UNION_SOPORTE} mm da união.`)}</div></div>`;
     if (overlapError) alertHtml += `<div class="alert danger"><div>${overlapError}</div></div>`;
     if (warnings.length && !overlapError && !colisionesPlegado.length) alertHtml += `<div class="alert info">${warnings.map(w=>`<div>ℹ ${w}</div>`).join('')}</div>`;
     if (soportesInfo) {
@@ -3626,7 +3674,7 @@ const App = (() => {
     // debajo de la leyenda, el dibujo del manual (pág. 57): la unión, sobre un soporte.
     let yFinal = yLeyenda + 14;
     if (L > 7000) {
-      const col = '#c0102e', xu = marginLeft + (L / 2) * scale, xB = marginLeft + usableWidth, L1 = Math.round(L / 2), yC = 46;
+      const col = '#c0102e', xu = marginLeft + U * scale, xB = marginLeft + usableWidth, L1 = Math.round(U), yC = 46;
       const flecha = (a, b, txt) => `
         <line x1="${a + 4}" y1="${yC}" x2="${b - 4}" y2="${yC}" stroke="${col}" stroke-width="1.6"/>
         <path d="M${a} ${yC} l9 -4.5 v9 z M${b} ${yC} l-9 -4.5 v9 z" fill="${col}"/>
@@ -3648,9 +3696,9 @@ const App = (() => {
         ${recuadro(xE, wE, typeof EMPALME_MODULBOX === 'string' && EMPALME_MODULBOX, t3('Manual pág. 56 · empalme de los perfiles', 'Manual p. 56 · profile joints', 'Manuel p. 56 · raccord des profils', 'Handbuch S. 56 · Profilverbindungen', 'Manuale p. 56 · giunzione dei profili', 'Manual p. 56 · emenda dos perfis'))}
         <text x="${xu}" y="${yI + hI + 26}" font-size="11" font-weight="700" fill="${col}" text-anchor="middle">${t3('Unión de cofres (L > 7 m) · manual pág. 57: hacer coincidir la unión de la barra cuadrada con un soporte', 'Cassette joint (L > 7 m) · manual p. 57: make the square bar joint match a bracket', 'Jonction des coffres (L > 7 m) · manuel p. 57 : faire coïncider la jonction de la barre carrée avec un support', 'Kassettenverbindung (L > 7 m) · Handbuch S. 57: Stoß der Vierkantstange auf eine Konsole legen', 'Giunzione cassonetti (L > 7 m) · manuale p. 57: far coincidere la giunzione della barra quadra con un supporto', 'União de cofres (L > 7 m) · manual p. 57: fazer coincidir a união da barra quadrada com um suporte')}</text>`;
       // Soporte de pared donde se empalma la barra cuadrada: el más cercano a la unión.
-      const spEmpalme = paredes.length ? paredes.reduce((a, b) => Math.abs(b - L / 2) < Math.abs(a - L / 2) ? b : a) : null;
+      const spEmpalme = paredes.length ? paredes.reduce((a, b) => Math.abs(b - U) < Math.abs(a - U) ? b : a) : null;
       if (spEmpalme !== null) imageElements += `
-        <text x="${xu}" y="${yI + hI + 42}" font-size="11" font-weight="800" fill="${col}" text-anchor="middle">${t3('Empalme de la barra cuadrada sobre el soporte de pared de', 'Square bar joint on the wall bracket at', 'Raccord de la barre carrée sur le support mural à', 'Stoß der Vierkantstange auf der Wandkonsole bei', 'Giunzione della barra quadra sul supporto a parete a', 'Emenda da barra quadrada sobre o suporte de parede a')} ${spEmpalme} mm (${Math.abs(Math.round(spEmpalme - L / 2))} mm ${t3('de la unión de cofres', 'from the cassette joint', 'de la jonction des coffres', 'von der Kassettenverbindung', 'dalla giunzione cassonetti', 'da união de cofres')})</text>`;
+        <text x="${xu}" y="${yI + hI + 42}" font-size="11" font-weight="800" fill="${col}" text-anchor="middle">${t3('Empalme de la barra cuadrada sobre el soporte de pared de', 'Square bar joint on the wall bracket at', 'Raccord de la barre carrée sur le support mural à', 'Stoß der Vierkantstange auf der Wandkonsole bei', 'Giunzione della barra quadra sul supporto a parete a', 'Emenda da barra quadrada sobre o suporte de parede a')} ${spEmpalme} mm (${Math.abs(Math.round(spEmpalme - U))} mm ${t3('de la unión de cofres', 'from the cassette joint', 'de la jonction des coffres', 'von der Kassettenverbindung', 'dalla giunzione cassonetti', 'da união de cofres')})</text>`;
       yFinal = yI + hI + (spEmpalme !== null ? 56 : 40);
     }
     const totalHeight = yFinal;

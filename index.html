@@ -375,6 +375,7 @@
         <div>
           <label id="lblLinea" for="linea">Línea L (mm)</label>
           <input id="linea" type="number" min="0" placeholder="Ej. 6000" />
+          <div id="lineaMaxInfo" style="font-size: 0.75rem; margin-top: 4px;"></div>
         </div>
         <div>
           <label id="lblSalida" for="salida">Salida S (mm)</label>
@@ -2343,6 +2344,7 @@ const App = (() => {
 
   // El primer brazo siempre es izquierdo y el último derecho; solo los interiores eligen mano.
   // Con 3 brazos, el central va de entrada en la misma mano que el lado del motor.
+  // Con 4 brazos, de entrada Izq-Izq-Der-Der.
   const fijarLadosExtremos = () => {
     const n = +refs.numBrazos.value || 0;
     if (n < 2) return;
@@ -2352,6 +2354,12 @@ const App = (() => {
     if (ultimo) ultimo.value = 'der';
     const central = n === 3 && document.getElementById('lado2');
     if (central && !central.value) central.value = refs.ladoMotor.value;
+    if (n === 4) {
+      const segundo = document.getElementById('lado2');
+      const tercero = document.getElementById('lado3');
+      if (segundo && !segundo.value) segundo.value = 'izq';
+      if (tercero && !tercero.value) tercero.value = 'der';
+    }
   };
 
   const buildBrazosUI = (triggerRender = true) => {
@@ -2852,8 +2860,8 @@ const App = (() => {
     return lista;
   };
 
-  // Tras subir un presupuesto, brazos y soportes de pared se calculan solos. Con 4 brazos la mano
-  // de los interiores no viene en el pedido: se calcula al elegirla (si no se han escrito cotas a mano).
+  // Tras subir un presupuesto, brazos y soportes de pared se calculan solos. Si falta la mano de
+  // un brazo interior, se calcula al elegirla (si no se han escrito cotas a mano).
   let calculoPendiente = false;
   const calcularTodoAuto = () => calcularPosicionBrazos(true) && sugerirSoportes(true);
   const faltaLado = () => Array.from({ length: +refs.numBrazos.value || 0 }, (_, i) => document.getElementById('lado' + (i + 1))?.value).some(l => !l);
@@ -3427,6 +3435,17 @@ const App = (() => {
     const fueraMinManual = L > 0 && (lineaMinManual === null || (lineaMinManual && L < lineaMinManual));
     const lineaMaxima = LINEA_MAX_POR_BRAZOS[numBrazosVal] || null;
     const excedeLineaMax = L > 0 && lineaMaxima != null && L > lineaMaxima;
+    // Línea máxima del manual, siempre a la vista bajo el campo (en el idioma de la app).
+    const lineaMaxInfo = document.getElementById('lineaMaxInfo');
+    lineaMaxInfo.textContent = enUI(() => lineaMaxima
+      ? t3(`Línea máxima con ${numBrazosVal} brazos: ${lineaMaxima} mm`, `Maximum width with ${numBrazosVal} arms: ${lineaMaxima} mm`,
+        `Largeur maximale avec ${numBrazosVal} bras : ${lineaMaxima} mm`, `Maximale Strecke mit ${numBrazosVal} Armen: ${lineaMaxima} mm`,
+        `Lunghezza massima con ${numBrazosVal} bracci: ${lineaMaxima} mm`, `Largura máxima com ${numBrazosVal} braços: ${lineaMaxima} mm`)
+      : t3('Línea máxima: 6000 mm con 2 brazos, 9000 mm con 3, 12000 mm con 4', 'Maximum width: 6000 mm with 2 arms, 9000 mm with 3, 12000 mm with 4',
+        'Largeur maximale : 6000 mm avec 2 bras, 9000 mm avec 3, 12000 mm avec 4', 'Maximale Strecke: 6000 mm mit 2 Armen, 9000 mm mit 3, 12000 mm mit 4',
+        'Lunghezza massima: 6000 mm con 2 bracci, 9000 mm con 3, 12000 mm con 4', 'Largura máxima: 6000 mm com 2 braços, 9000 mm com 3, 12000 mm com 4'));
+    lineaMaxInfo.style.color = L > (lineaMaxima || LINEA_MAX_POR_BRAZOS[4]) ? '#991b1b' : 'var(--text-muted)';
+    lineaMaxInfo.style.fontWeight = L > (lineaMaxima || LINEA_MAX_POR_BRAZOS[4]) ? '700' : '400';
 
     const paredes = parseParedes(L);
     const brazos  = parseBrazos(L);

@@ -408,6 +408,16 @@
         </div>
       </div>
       <div class="row">
+        <div id="grupoMotorNm">
+          <label id="lblMotorNm" for="motorNm">🔩 Motor toldo (Nm)</label>
+          <div style="display:flex; gap:6px; align-items:center;">
+            <input id="motorNm" type="number" min="0" step="1" placeholder="—" inputmode="numeric" />
+            <button id="btnMotorNmManual" type="button" class="secondary" style="margin-top:0; width:auto; flex:none; padding:8px 12px;" hidden>↺</button>
+          </div>
+          <div id="motorNmInfo" style="font-size: 0.75rem; margin-top: 4px;"></div>
+        </div>
+      </div>
+      <div class="row">
         <div>
           <label id="lblGrosorTapa" for="grosorTapa">🧵 Grosor de tapa (mm)</label>
           <input id="grosorTapa" type="number" min="0" value="19" placeholder="Ej. 19" />
@@ -699,6 +709,51 @@ const App = (() => {
   // Manual MODULBOX-400, 1.7 "Líneas máximas": L máx. por nº de brazos (S ya está limitada
   // a 4000mm por las propias opciones del <select> de Salida, no hace falta validarlo aquí).
   const LINEA_MAX_POR_BRAZOS = { 2: 6000, 3: 9000, 4: 12000 };
+
+  // Manual MODULBOX-400 (junio 2024), apdo. 3: par mínimo del motor (Nm) por nº de brazos.
+  // l = línea (mm), s = salida (mm), null = el manual no da esa medida. Brazos cruzados: misma tabla.
+  const NM_MOTOR = {
+    2: { l: [2000, 2500, 3000, 3500, 4000, 4500, 5000, 5500, 6000],
+        s: [1500, 2000, 2500, 3000, 3500, 4000],
+        v: [[25, 30, 30, 30, 30, 30, 30, 30, 30],
+          [30, 30, 35, 35, 35, 35, 35, 35, 35],
+          [35, 35, 40, 40, 40, 40, 40, 40, 40],
+          [null, 40, 40, 50, 50, 50, 50, 50, 50],
+          [null, 50, 50, 50, 50, 50, 50, 50, 50],
+          [null, null, 50, 50, 50, 50, 50, 50, 50]] },
+    3: { l: [3000, 3500, 4000, 4500, 5000, 5500, 6000, 6500, 7000, 7500, 8000, 8500, 9000],
+        s: [1500, 2000, 2500, 3000, 3500, 4000],
+        v: [[40, 40, 40, 40, 40, 40, 50, 50, 50, 50, 50, 50, 50],
+          [null, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 55],
+          [null, null, null, 55, 55, 55, 55, 70, 70, 70, 70, 70, 70],
+          [null, null, null, null, null, 70, 70, 70, 70, 70, 70, 70, 70],
+          [null, null, null, null, null, null, 70, 70, 70, 70, 70, 85, 85],
+          [null, null, null, null, null, null, null, null, 85, 85, 85, 85, 85]] },
+    4: { l: [4000, 4500, 5000, 5500, 6000, 6500, 7000, 7500, 8000, 8500, 9000, 9500, 10000, 10500, 11000, 11500, 12000],
+        s: [1500, 2000, 2500, 3000, 3500, 4000],
+        v: [[50, 55, 55, 55, 55, 55, 55, 55, 55, 55, 55, 70, 70, 70, 70, 70, 70],
+          [null, null, 70, 70, 70, 70, 70, 70, 70, 70, 70, 70, 70, 70, 70, 70, 70],
+          [null, null, null, null, 85, 85, 85, 85, 85, 85, 85, 85, 85, 85, 85, 85, 85],
+          [null, null, null, null, null, null, 85, 85, 85, 85, 85, 85, 85, 100, 100, 100, 100],
+          [null, null, null, null, null, null, null, null, 100, 100, 100, 100, 100, 100, 100, 100, 100],
+          [null, null, null, null, null, null, null, null, null, null, 100, 100, 100, 100, 100, 100, 100]] },
+  };
+  // Medidas intermedias: siempre a la fila y columna superiores, porque la tabla da el par mínimo.
+  const buscarNm = (tabla, S_mm, L_mm) => {
+    if (!tabla || !(S_mm > 0) || !(L_mm > 0)) return null;
+    const pos = (lista, v) => { const i = lista.findIndex(x => x >= v); return i < 0 ? lista.length - 1 : i; };
+    const iS = pos(tabla.s, S_mm);
+    const fila = tabla.v[iS];
+    const iL = pos(tabla.l, L_mm);
+    let col = iL;
+    if (fila[col] == null) {
+      col = -1;
+      for (let i = iL - 1; i >= 0 && col < 0; i--) if (fila[i] != null) col = i;
+      if (col < 0) col = fila.findIndex(v => v != null);
+    }
+    return { nm: fila[col], l: tabla.l[col], s: tabla.s[iS], exacto: col === iL };
+  };
+
 
   // Manual MODULBOX-400 (junio 2024) pág. 4, «1.3 Línea mínimas»: L mín. (mm) por salida (Andrés, 26-oct-2026:
   // manda la de 2024 sobre la de 2021 y sobre las tablas Excel). m2/m3/m4 = motor 2/3/4 brazos; q2 = máquina
@@ -2158,6 +2213,9 @@ const App = (() => {
     maquina:         document.getElementById('maquina'),
     linea:           document.getElementById('linea'),
     salida:          document.getElementById('salida'),
+    motorNm:         document.getElementById('motorNm'),
+    motorNmInfo:     document.getElementById('motorNmInfo'),
+    btnMotorNmManual: document.getElementById('btnMotorNmManual'),
     ladoMotor:       document.getElementById('ladoMotor'),
     holgura:         document.getElementById('holgura'),
     grosorTapa:      document.getElementById('grosorTapa'),
@@ -2219,6 +2277,7 @@ const App = (() => {
       linea:      refs.linea.value,
       salida:     refs.salida.value,
       ladoMotor:  refs.ladoMotor.value,
+      motorNm:    refs.motorNm.dataset.editado === '1' ? refs.motorNm.value : '',
       holgura:    refs.holgura.value,
       grosorTapa: refs.grosorTapa.value,
       posUnion:   refs.posUnion.value,
@@ -2259,6 +2318,8 @@ const App = (() => {
     refs.linea.value      = state.linea      || '';
     refs.salida.value     = state.salida     || '2000';
     refs.ladoMotor.value  = state.ladoMotor  || 'izq';
+    refs.motorNm.value    = state.motorNm    || '';
+    refs.motorNm.dataset.editado = state.motorNm ? '1' : '';
     refs.holgura.value    = state.holgura    || '0';
     refs.grosorTapa.value = state.grosorTapa || '19';
     refs.posUnion.value   = state.posUnion   || '';
@@ -2421,6 +2482,7 @@ const App = (() => {
     document.getElementById('lblSalida').textContent = labels.lblSalida;
     refs.linea.placeholder = labels.phLinea;
     document.getElementById('lblLadoMotor').textContent = labels.lblLadoMotor;
+    document.getElementById('lblMotorNm').textContent = t3('🔩 Motor toldo (Nm)', '🔩 Awning motor (Nm)', '🔩 Moteur store (Nm)', '🔩 Markisenmotor (Nm)', '🔩 Motore tenda (Nm)', '🔩 Motor do toldo (Nm)');
     document.getElementById('lblHolgura').textContent = labels.lblHolgura;
     document.getElementById('lblGrosorTapa').textContent = labels.lblGrosorTapa;
     refs.grosorTapa.placeholder = labels.phGrosorTapa;
@@ -2907,7 +2969,7 @@ const App = (() => {
     const datos = Object.fromEntries(Object.entries(parcial).filter(([k]) => k[0] !== '_'));
     // Si trae el toldo, las cotas que hubiera eran de otro toldo: se vacían y se recalculan.
     const traeToldo = ['linea', 'salida', 'numBrazos'].some(k => parcial[k]);
-    if (traeToldo) Object.assign(datos, { brazosData: [], cotasPared: '', cotasTejadillo: '', cotasInferior: '' });
+    if (traeToldo) Object.assign(datos, { brazosData: [], cotasPared: '', cotasTejadillo: '', cotasInferior: '', motorNm: '' });
     applyState(Object.assign(getState(), datos));
     render();
     let calc = '';
@@ -3244,6 +3306,8 @@ const App = (() => {
     updateBCAvailability();
     refs.modelo.addEventListener('change', updatePerfilesAvailability);
     refs.ladoMotor.addEventListener('change', alCambiarLadoMotor);
+    refs.motorNm.addEventListener('input', () => { refs.motorNm.dataset.editado = refs.motorNm.value.trim() === '' ? '' : '1'; scheduleRender(); });
+    refs.btnMotorNmManual.addEventListener('click', () => { refs.motorNm.dataset.editado = ''; render(); saveState(); });
     updatePerfilesAvailability();
 
     refs.btnLangES.addEventListener('click', () => switchLanguage('es'));
@@ -3383,6 +3447,25 @@ const App = (() => {
   const idiomaPlano = () => idiomaForzado
     || (document.body.classList.contains('view-taller') ? refs.idiomaTaller.value : refs.idiomaCliente.value)
     || uiLang;
+  // Campo de Nm: sale solo con el valor del manual; lo escrito a mano se conserva hasta pulsar ↺.
+  const pintarNm = (input, info, btn, dato, caso) => {
+    const editado = input.dataset.editado === '1';
+    if (!editado) input.value = dato ? dato.nm : '';
+    btn.hidden = !editado;
+    btn.title = enUI(() => t3('Volver al valor del manual', 'Back to the manual value', 'Revenir à la valeur du manuel', 'Zurück zum Handbuchwert', 'Torna al valore del manuale', 'Voltar ao valor do manual'));
+    const valor = Number(input.value) || 0;
+    const bajo = editado && dato && valor < dato.nm;
+    input.style.borderColor = editado ? '#d97706' : '';
+    info.style.color = (bajo || (dato && !dato.exacto)) ? '#991b1b' : 'var(--text-muted)';
+    info.style.fontWeight = bajo ? '700' : '400';
+    info.textContent = !dato ? '' : enUI(() =>
+      (dato.exacto ? '' : t3('⚠ El manual no da esta medida: valor más cercano · ', '⚠ The manual has no value for this size: nearest value · ', '⚠ Le manuel ne donne pas cette mesure : valeur la plus proche · ', '⚠ Für dieses Maß kein Handbuchwert: nächster Wert · ', '⚠ Il manuale non indica questa misura: valore più vicino · ', '⚠ O manual não dá esta medida: valor mais próximo · '))
+      + (bajo ? t3('⚠ Por debajo del mínimo del manual · ', '⚠ Below the manual minimum · ', '⚠ Inférieur au minimum du manuel · ', '⚠ Unter dem Mindestwert des Handbuchs · ', '⚠ Inferiore al minimo del manuale · ', '⚠ Abaixo do mínimo do manual · ')
+        : editado ? t3('Editado a mano · ', 'Edited by hand · ', 'Modifié à la main · ', 'Von Hand geändert · ', 'Modificato a mano · ', 'Editado à mão · ') : '')
+      + t3('Manual: ', 'Manual: ', 'Manuel : ', 'Handbuch: ', 'Manuale: ', 'Manual: ') + `${dato.nm} Nm (${caso(dato)})`);
+    return valor;
+  };
+  const casoNmToldo = (n) => (d) => `L ${d.l} mm · S ${d.s} mm · ${n} ${t3('brazos', 'arms', 'bras', 'Arme', 'bracci', 'braços')}`;
   const enUI = (fn) => { const c = currentLang; currentLang = uiLang; try { return fn(); } finally { currentLang = c; } };
   const render = () => {
     if (pintando) return pintar();
@@ -3424,6 +3507,11 @@ const App = (() => {
     const motor   = refs.ladoMotor.value;
     const numBrazosVal = +refs.numBrazos.value || 0;
     const labels  = i18n[currentLang];
+
+    // Con máquina no hay motor en el toldo: ni campo ni Nm en el plano.
+    const conMotor = refs.maquina.value !== 'SI';
+    document.getElementById('grupoMotorNm').style.display = conMotor ? '' : 'none';
+    const motorNmValor = conMotor ? pintarNm(refs.motorNm, refs.motorNmInfo, refs.btnMotorNmManual, buscarNm(NM_MOTOR[numBrazosVal], S, L), casoNmToldo(numBrazosVal)) : 0;
 
     const brazoRep = getBrazoPlegadoReal(S);
     // Tipo de configuración según manual MODULBOX-400 (1.3 Línea mínimas): A si S≤2,5m, B si S≥2,75m.
@@ -4147,7 +4235,7 @@ const App = (() => {
         </div>
         <div class="plan-meta">
           📋 ${labels.metaPedido}: <b>${pedido}</b> &nbsp;&middot;&nbsp; 👤 ${labels.metaCliente}: <b>${cliente}</b><br/>
-          📏 ${labels.metaLinea}: <b>${L} mm</b> &nbsp;&middot;&nbsp; 📐 ${labels.metaSalida}: <b>${S} mm</b> &nbsp;&middot;&nbsp; ⚡ ${labels.metaMotor}: <b>${motor === 'izq' ? labels.motorIzq : labels.motorDer}</b>
+          📏 ${labels.metaLinea}: <b>${L} mm</b> &nbsp;&middot;&nbsp; 📐 ${labels.metaSalida}: <b>${S} mm</b> &nbsp;&middot;&nbsp; ⚡ ${labels.metaMotor}: <b>${motor === 'izq' ? labels.motorIzq : labels.motorDer}${motorNmValor ? ` · ${motorNmValor} Nm` : ''}</b>
           ${grosorTapa && L > 0 ? `<span class="taller-only"><br/>🔩 ${t3('Barra cuadrada (sin tapas)', 'Square bar (without end caps)', 'Barre carrée (sans embouts)', 'Vierkantstange (ohne Endkappen)', 'Barra quadra (senza tappi)', 'Barra quadrada (sem tampas)')}: <b>${L - 2 * grosorTapa} mm</b> (${L} − 2 × ${grosorTapa})<br/>📐 ${t3('Las medidas de taller son sobre la barra cuadrada, sin la tapa', 'Workshop dimensions are on the square bar, without the end cap', 'Les cotes atelier sont sur la barre carrée, sans l\'embout', 'Werkstattmaße gelten für den Vierkantstab ohne Endkappe', 'Le quote officina sono sulla barra quadra, senza il tappo', 'As cotas de oficina são sobre a barra quadrada, sem a tampa')}</span><span class="col-cliente"><br/>📐 ${t3('La línea se mide contando las tapas: las cotas van sobre la línea, desde el extremo izquierdo (0)', 'The width includes the end caps: positions are measured on the width, from the left end (0)', 'La largeur se mesure embouts compris : les cotes sont sur la largeur, depuis l\'extrémité gauche (0)', 'Die Strecke wird mit Endkappen gemessen: Positionen auf der Strecke, ab dem linken Ende (0)', 'La lunghezza si misura con i tappi: le quote sono sulla lunghezza, dall\'estremità sinistra (0)', 'A largura mede-se com as tampas: as cotas são sobre a largura, a partir da extremidade esquerda (0)')}</span>` : ''}
         </div>
       </div>

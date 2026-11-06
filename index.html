@@ -1280,7 +1280,46 @@ const App = (() => {
     if (positions[positions.length - 1] > L_mm || positions.some(p => p < 0)) {
       return { error: 'fuera_de_rango' };
     }
-    return { positions: positions.map(Math.round), l3 };
+    let pos = positions.map(Math.round);
+    if (nbrazos > 2 && L_mm > 7000) pos = alejarBrazosDeUnion(pos, S_mm, L_mm, ladoArray);
+    return { positions: pos, l3 };
+  };
+
+  // L > 7000: hacia qué lado de la unión de cofres se aparta el brazo idx (-1 izquierda, +1 derecha)
+  // cuando cae a menos de UNION_SOPORTE + SOPORTE_OFFSET de ella. Manda el ORDEN del brazo (la mitad
+  // izquierda de brazos va a la izquierda de la unión y la derecha a la derecha), no su mano: con
+  // Izq-Der-Izq-Der (un par enfrentado por cofre) B2 (Der) debe quedar a la izquierda de la unión y
+  // B3 (Izq) a la derecha; por mano se cruzaban. El brazo central de un nº impar usa su mano.
+  const ladoUnion = (idx, n, lado) => {
+    const c = (n - 1) / 2;
+    return idx < c ? -1 : idx > c ? 1 : (lado === 'izq' ? -1 : 1);
+  };
+
+  // L > 7000: los brazos que caen sobre la unión se apartan a UNION_SOPORTE + SOPORTE_OFFSET de ella
+  // y los exteriores se desplazan hacia el extremo (nunca más cerca del centro) lo justo para que
+  // sigan cabiendo los huecos mínimos entre brazos (plegado / manual), hasta el margen mínimo L3.
+  // Si ni así caben, los exteriores quedan en ese margen y el plano avisa de la colisión.
+  const alejarBrazosDeUnion = (pos, S_mm, L_mm, ladoArray) => {
+    const n = pos.length;
+    const mid = cotaUnion(L_mm);
+    const apartar = UNION_SOPORTE + SOPORTE_OFFSET;
+    const p = pos.slice();
+    const anclas = [];
+    for (let i = 0; i < n; i++) {
+      if (Math.abs(p[i] - mid) < apartar) {
+        p[i] = Math.round(mid + ladoUnion(i, n, ladoArray[i]) * apartar);
+        anclas.push(i);
+      }
+    }
+    if (!anclas.length) return pos;
+    const min = [];
+    for (let i = 1; i < n; i++) min.push(Math.ceil(huecoNecesarioOnyx(ladoArray[i - 1], ladoArray[i], S_mm, 0)));
+    for (let i = anclas[0] - 1; i >= 0; i--) p[i] = Math.min(p[i], p[i + 1] - min[i]);
+    for (let i = anclas[anclas.length - 1] + 1; i < n; i++) p[i] = Math.max(p[i], p[i - 1] + min[i - 1]);
+    const margen = Math.ceil(MIN_TABLE[nearestS(S_mm / 1000)].L3min);
+    p[0] = Math.max(p[0], margen);
+    p[n - 1] = Math.min(p[n - 1], L_mm - margen);
+    return p;
   };
 
   // Distancia del terminal del brazo en la barra de carga.
@@ -3112,7 +3151,7 @@ const App = (() => {
       // Cerca de la unión de cofres, el soporte brazo se aparta hacia su lado hasta que su soporte
       // de pared más cercano quede a UNION_SOPORTE de la unión: ahí se empalma la barra cuadrada.
       const apartar = UNION_SOPORTE + SOPORTE_OFFSET;
-      if (L > 7000 && Math.abs(pos - cotaUnion(L)) < apartar) pos = Math.round(cotaUnion(L) + (ladoArray[idx] === 'izq' ? -apartar : apartar));
+      if (L > 7000 && Math.abs(pos - cotaUnion(L)) < apartar) pos = Math.round(cotaUnion(L) + ladoUnion(idx, ladoArray.length, ladoArray[idx]) * apartar);
       const cotaEl = document.getElementById('cota' + (idx + 1));
       if (cotaEl) cotaEl.value = pos;
     });

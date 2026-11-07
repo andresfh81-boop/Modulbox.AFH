@@ -965,6 +965,14 @@ const App = (() => {
     if (!positions.length) return { error: 'sin_datos' };
     // Los de brazo y el de la unión no se mueven; los de extremo y de relleno se apartan del tejadillo/liras/inferior.
     const fijos = new Set(positions);
+    // L > 7000: siempre un soporte de pared justo en la unión de cofres (criterio de Andrés, 07-nov-2026).
+    // Es fijo (no se aparta de tejadillo/liras/inferior). Si otro soporte de pared quedaba a menos de
+    // SOPORTE_SOLAPE de ella, se sustituye por este para que no se monten.
+    if (partido) {
+      const mid = Math.round(cotaUnion(L_mm));
+      positions = [...positions.filter(p => Math.abs(p - mid) >= SOPORTE_SOLAPE), mid].sort((a, b) => a - b);
+      fijos.add(mid);
+    }
 
     // Manual pág. 4–5: si L1 ≥ 350, segundo soporte con L2 máx. 350 (antes, a la mitad: L2 hasta 385).
     if (positions[0] >= SOPORTE_EXTREMO_MAX) {
@@ -1367,6 +1375,13 @@ const App = (() => {
     const segment = (L_mm - 2 * tapa) / (n + 1);
     const positions = [];
     for (let k = 1; k <= n; k++) positions.push(Math.round(tapa + k * segment));
+    // L > 7000: en la unión de cofres va siempre un soporte de pared (criterio de Andrés, 07-nov-2026).
+    // El de tejadillo/lira/inferior que caiga a menos de DESPLAZ_BRAZO_PERFIL de ella se aparta hasta esa
+    // distancia (hacia su lado; si cae justo encima, hacia la derecha) para que no se monten.
+    if (L_mm > 7000) {
+      const mid = Math.round(cotaUnion(L_mm));
+      return positions.map(p => Math.abs(p - mid) < DESPLAZ_BRAZO_PERFIL ? mid + (p < mid ? -1 : 1) * DESPLAZ_BRAZO_PERFIL : p);
+    }
     return positions;
   };
 

@@ -1294,7 +1294,7 @@ const App = (() => {
   };
 
   // L > 7000: hacia qué lado de la unión de cofres se aparta el brazo idx (-1 izquierda, +1 derecha)
-  // cuando cae a menos de UNION_SOPORTE + SOPORTE_OFFSET de ella. Manda el ORDEN del brazo (la mitad
+  // cuando cae a menos de UNION_LIBRE de ella. Manda el ORDEN del brazo (la mitad
   // izquierda de brazos va a la izquierda de la unión y la derecha a la derecha), no su mano: con
   // Izq-Der-Izq-Der (un par enfrentado por cofre) B2 (Der) debe quedar a la izquierda de la unión y
   // B3 (Izq) a la derecha; por mano se cruzaban. El brazo central de un nº impar usa su mano.
@@ -1303,14 +1303,15 @@ const App = (() => {
     return idx < c ? -1 : idx > c ? 1 : (lado === 'izq' ? -1 : 1);
   };
 
-  // L > 7000: los brazos que caen sobre la unión se apartan a UNION_SOPORTE + SOPORTE_OFFSET de ella
+  // L > 7000: los brazos que caen sobre la unión se apartan a UNION_LIBRE (500 mm) de ella (antes 620 mm, para que su
+  // soporte de pared hiciera de empalme; desde el 07-nov-2026 hay siempre un soporte de pared en la unión)
   // y los exteriores se desplazan hacia el extremo (nunca más cerca del centro) lo justo para que
   // sigan cabiendo los huecos mínimos entre brazos (plegado / manual), hasta el margen mínimo L3.
   // Si ni así caben, los exteriores quedan en ese margen y el plano avisa de la colisión.
   const alejarBrazosDeUnion = (pos, S_mm, L_mm, ladoArray) => {
     const n = pos.length;
     const mid = cotaUnion(L_mm);
-    const apartar = UNION_SOPORTE + SOPORTE_OFFSET;
+    const apartar = UNION_LIBRE;
     const p = pos.slice();
     const anclas = [];
     for (let i = 0; i < n; i++) {
@@ -3163,9 +3164,9 @@ const App = (() => {
         // Si apartándolo cae encima de otro soporte, se deja y el plano avisa de la colisión.
         if (!chocaConPerfil(movido, perfilPos)) pos = movido;
       }
-      // Cerca de la unión de cofres, el soporte brazo se aparta hacia su lado hasta que su soporte
-      // de pared más cercano quede a UNION_SOPORTE de la unión: ahí se empalma la barra cuadrada.
-      const apartar = UNION_SOPORTE + SOPORTE_OFFSET;
+      // Cerca de la unión de cofres, el soporte brazo se aparta hacia su lado hasta UNION_LIBRE (500 mm)
+      // de ella; en la unión va siempre un soporte de pared, donde se empalma la barra cuadrada.
+      const apartar = UNION_LIBRE;
       if (L > 7000 && Math.abs(pos - cotaUnion(L)) < apartar) pos = Math.round(cotaUnion(L) + ladoUnion(idx, ladoArray.length, ladoArray[idx]) * apartar);
       const cotaEl = document.getElementById('cota' + (idx + 1));
       if (cotaEl) cotaEl.value = pos;

@@ -185,6 +185,8 @@
     /* Filas y bloques que SOLO aparecen en la copia de taller (btnPrintTaller).
        La versión cliente (pantalla, impresión y PDF/PNG) solo muestra soportes de PARED. */
     .taller-only { display: none !important; }
+    /* Copias del plano solo para imprimir (ver @media print). */
+    .svg-impresion, .manual-impresion { display: none; }
 
     @media print {
       @page { size: landscape; margin: 10mm; }
@@ -204,7 +206,13 @@
       #planoOut > .plano-click-zoom { order: 1; outline: none; }
       #alertOut { order: 4; margin-top: 14px; }
       #planoOut > .plan-notes-container { order: 5; }
-      .plano-click-zoom > svg { max-height: 120mm; }
+      /* El plano a todo el ancho de la hoja (como mucho 150 mm de alto, para que quepa con la
+         cabecera en la primera); los dibujos del manual, aparte, detrás del plano. */
+      .plano-click-zoom > svg:not(.svg-impresion) { display: none !important; }
+      .plano-click-zoom > svg.svg-impresion, .manual-impresion { display: block !important; }
+      .plano-click-zoom > svg.svg-impresion { width: 100%; height: auto; max-height: 150mm; margin: 4mm auto 0; }
+      #planoOut > .manual-impresion { order: 2; break-inside: avoid; page-break-inside: avoid; margin-top: 4mm; }
+      .manual-impresion svg { display: block !important; width: 100%; height: auto; max-height: 70mm; }
       .plano-lens { display: none !important; }
       .plan-header, .plano-click-zoom, .alert, .terminal-table, .plan-notes-container { break-inside: avoid; page-break-inside: avoid; }
       .summary-table { break-inside: avoid; page-break-inside: avoid; }
@@ -3365,12 +3373,21 @@ const App = (() => {
     refs.btnMotorNmManual.addEventListener('click', () => { refs.motorNm.dataset.editado = ''; render(); saveState(); });
     updatePerfilesAvailability();
 
-    refs.btnLangES.addEventListener('click', () => switchLanguage('es'));
-    refs.btnLangEN.addEventListener('click', () => switchLanguage('en'));
-    refs.btnLangFR.addEventListener('click', () => switchLanguage('fr'));
-    refs.btnLangDE.addEventListener('click', () => switchLanguage('de'));
-    refs.btnLangIT.addEventListener('click', () => switchLanguage('it'));
-    refs.btnLangPT.addEventListener('click', () => switchLanguage('pt'));
+    // Al pulsar un idioma de la app cambian también los dos planos (Cliente y Taller) a ese idioma, para
+    // que salga todo igual (criterio de Andrés, 07-nov-2026); luego se pueden cambiar uno a uno.
+    const cambiarIdiomaTodo = (lang) => {
+      refs.idiomaCliente.value = lang;
+      refs.idiomaTaller.value = lang;
+      switchLanguage(lang);
+      render();
+      saveState();
+    };
+    refs.btnLangES.addEventListener('click', () => cambiarIdiomaTodo('es'));
+    refs.btnLangEN.addEventListener('click', () => cambiarIdiomaTodo('en'));
+    refs.btnLangFR.addEventListener('click', () => cambiarIdiomaTodo('fr'));
+    refs.btnLangDE.addEventListener('click', () => cambiarIdiomaTodo('de'));
+    refs.btnLangIT.addEventListener('click', () => cambiarIdiomaTodo('it'));
+    refs.btnLangPT.addEventListener('click', () => cambiarIdiomaTodo('pt'));
 
     refs.btnUploadPresupuesto.addEventListener('click', () => refs.filePresupuesto.click());
     refs.filePresupuesto.addEventListener('change', (e) => {
@@ -4214,6 +4231,8 @@ const App = (() => {
     // L > 7000: la unión de los dos cofres, remarcada en rojo en la barra, con L1 y L2 arriba y,
     // debajo de la leyenda, el dibujo del manual (pág. 57): la unión, sobre un soporte.
     let yFinal = yLeyenda + 14;
+    const yFinPlano = yFinal;
+    let yIniManual = null;
     if (L > 7000) {
       const col = '#c0102e', xu = marginLeft + U * scale, xB = marginLeft + usableWidth, L1 = Math.round(U), yC = 46;
       const flecha = (a, b, txt) => `
@@ -4241,6 +4260,7 @@ const App = (() => {
       if (spEmpalme !== null) imageElements += `
         <text x="${xu}" y="${yI + hI + 42}" font-size="11" font-weight="800" fill="${col}" text-anchor="middle">${t3('Empalme de la barra cuadrada sobre el soporte de pared de', 'Square bar joint on the wall bracket at', 'Raccord de la barre carrée sur le support mural à', 'Stoß der Vierkantstange auf der Wandkonsole bei', 'Giunzione della barra quadra sul supporto a parete a', 'Emenda da barra quadrada sobre o suporte de parede a')} ${spEmpalme} mm (${Math.abs(Math.round(spEmpalme - U))} mm ${t3('de la unión de cofres', 'from the cassette joint', 'de la jonction des coffres', 'von der Kassettenverbindung', 'dalla giunzione cassonetti', 'da união de cofres')})</text>`;
       yFinal = yI + hI + (spEmpalme !== null ? 56 : 40);
+      yIniManual = yI - 22;
     }
     const totalHeight = yFinal;
 
@@ -4283,6 +4303,17 @@ const App = (() => {
       </svg>
     `;
 
+    // Para imprimir (07-nov-2026, ver CSS @media print): el plano y los dibujos del manual van en dos SVG
+    // aparte, recortando la misma viewBox, para que el plano ocupe todo el ancho de la hoja en vez de
+    // encogerse con los dibujos de debajo. Ids renombrados: los del SVG de pantalla quedan ocultos.
+    const svgImpresion = (sufijo, y0, alto, clase) => svgDiagram
+      .replace(`viewBox="0 0 ${vbWidth} ${totalHeight}"`, `viewBox="0 ${y0} ${vbWidth} ${alto}" class="${clase}"`)
+      .replace(/id="(shadow|metalGrad|motorGrad|arrowStart|arrowEnd)"/g, `id="$1-${sufijo}"`)
+      .replace(/url\(#(shadow|metalGrad|motorGrad|arrowStart|arrowEnd)\)/g, `url(#$1-${sufijo})`);
+    const svgPlanoImpresion = svgImpresion('imp', 0, yFinPlano, 'svg-impresion');
+    const svgManualImpresion = yIniManual !== null
+      ? `<div class="manual-impresion">${svgImpresion('man', yIniManual, totalHeight - yIniManual, 'svg-impresion')}</div>` : '';
+
     let svgHtml = `
       <div class="plan-header">
         <div>
@@ -4297,10 +4328,12 @@ const App = (() => {
 
       <div class="plano-click-zoom" title="${labels.tituloAmpliarClick}">
       ${svgDiagram}
+      ${svgPlanoImpresion}
       <div class="plano-lens" id="planoLens">
         <div class="plano-lens-inner" id="planoLensInner">${svgDiagram}</div>
       </div>
       </div>
+      ${svgManualImpresion}
     `;
 
     // Descripción de cada fila: la de Cliente (cota al centro, desde 0 con tapa) y la de Taller
@@ -4442,7 +4475,7 @@ const App = (() => {
     if (medidasCodo.length) {
       svgHtml += `
         <div class="medida-control">
-          <h4>🔒 Medidas de control (solo pantalla, no sale en cliente/taller/PDF/PNG)</h4>
+          <h4>🔒 ${enUI(() => t3('Medidas de control (solo pantalla, no sale en cliente/taller/PDF/PNG)', 'Check measurements (screen only, not in client/workshop/PDF/PNG)', 'Mesures de contrôle (écran seulement, pas dans client/atelier/PDF/PNG)', 'Kontrollmaße (nur Bildschirm, nicht in Kunde/Werkstatt/PDF/PNG)', 'Misure di controllo (solo schermo, non in cliente/officina/PDF/PNG)', 'Medidas de controlo (só no ecrã, não sai em cliente/oficina/PDF/PNG)'))}</h4>
           ${medidasCodo.map(m => `<div>${m.texto}: <b>${m.valor} mm</b></div>`).join('')}
         </div>
       `;
